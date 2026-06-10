@@ -25,3 +25,8 @@ coverage/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Certificates and Keys
+*.pem
+*.cert
+*.key

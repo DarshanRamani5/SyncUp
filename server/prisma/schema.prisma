@@ -1,0 +1,139 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// =========================================
+// User Model
+// =========================================
+// Supports traditional auth (email/password with bcrypt)
+// Has friends system, conversations, and message relations
+model User {
+  id           String  @id @default(cuid()) @db.VarChar(30)
+  name         String? @db.VarChar(200)
+  email        String  @unique
+  passwordHash String
+  avatarUrl    String?
+  color        String? @db.VarChar(8)
+
+  // Friends system — self-referencing many-to-many
+  // A user can be on either side of a friendship
+  friendsWith User[] @relation("Friends")
+  friendOf    User[] @relation("Friends")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Conversations this user is part of (via join table)
+  conversations ConversationsOnUsers[]
+
+  // Friend requests sent and received
+  requestSent     FriendRequest[] @relation("FriendRequestsSent")
+  requestReceived FriendRequest[] @relation("FriendRequestsReceived")
+
+  // Messages this user has seen (many-to-many)
+  seenMessages Message[] @relation("seen")
+
+  // Messages this user has deleted for themselves (many-to-many)
+  deletedMessages Message[] @relation("deleted_for_user")
+
+  // Messages this user has sent
+  messages Message[] @relation("sent_messages")
+}
+
+// =========================================
+// Friend Request System
+// =========================================
+enum FriendRequestStatus {
+  accepted
+  declined
+  pending
+}
+
+model FriendRequest {
+  id         Int                 @id @default(autoincrement())
+  senderId   String              @db.VarChar(30)
+  receiverId String              @db.VarChar(30)
+  sender     User                @relation("FriendRequestsSent", fields: [senderId], references: [id])
+  receiver   User                @relation("FriendRequestsReceived", fields: [receiverId], references: [id])
+  status     FriendRequestStatus @default(pending)
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+}
+
+// =========================================
+// Conversation ↔ User Join Table
+// =========================================
+// Composite primary key (userId + conversationId) — no separate UUID needed.
+// This replaces the previous "Participant" model.
+model ConversationsOnUsers {
+  user           User         @relation(fields: [userId], references: [id])
+  userId         String       @db.VarChar(30)
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  conversationId String       @db.Uuid
+
+  @@id([userId, conversationId])
+}
+
+// =========================================
+// Conversation Model
+// =========================================
+model Conversation {
+  id            String               @id @default(uuid()) @db.Uuid
+  name          String?
+  isGroup       Boolean?             @default(false)
+  image         String?
+  users         ConversationsOnUsers[]
+  createdAt     DateTime             @default(now())
+  lastMessageAt DateTime             @default(now())
+  messages      Message[]
+
+  @@index([createdAt])
+}
+
+// =========================================
+// Message Model
+// =========================================
+model Message {
+  id        String  @id @default(uuid())
+  body      String?
+  image     String?
+  public_id String?
+
+  // Many-to-many: which users have seen this message
+  seenBy User[] @relation("seen")
+
+  // Many-to-many: which users have deleted this message for themselves
+  deletedBy User[] @relation("deleted_for_user")
+
+  // Sender relation
+  userId    String @db.VarChar(30)
+  createdBy User   @relation("sent_messages", fields: [userId], references: [id])
+
+  // Conversation relation
+  conversationId String       @db.Uuid
+  Conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  isEdited  Boolean?  @default(false)
+  isDeleted Boolean   @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([conversationId, createdAt])
+}
+
+// =========================================
+// Verification Token (for email verification / password reset)
+// =========================================
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@id([identifier, token])
+}
