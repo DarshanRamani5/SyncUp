@@ -929,8 +929,6 @@ body {
 
 .message-body {
   word-break: break-word;
-  /* Preserve line breaks the user typed (Shift+Enter / Enter) and wrap long lines */
-  white-space: pre-wrap;
 }
 
 .message-time {
@@ -980,11 +978,11 @@ body {
 .chat-input-wrapper {
   display: flex;
   align-items: flex-end;
-  gap: 8px;
+  gap: 12px;
   background: var(--color-bg-tertiary);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  padding: 4px 4px 4px 6px;
+  padding: 4px 4px 4px 16px;
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
@@ -1047,24 +1045,23 @@ body {
 
 /* Attach (paperclip) button — sits left of the textarea */
 .chat-attach-btn {
-  width: 38px;
-  height: 38px;
-  min-width: 38px;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: transparent;
   border: none;
   border-radius: var(--radius-sm);
-  color: var(--color-text-tertiary);
+  color: var(--text-secondary, #9ca3af);
   cursor: pointer;
   transition: all var(--transition-fast);
-  align-self: flex-end;
 }
 
 .chat-attach-btn:hover:not(:disabled) {
-  color: var(--color-accent);
-  background: var(--color-accent-light);
+  color: #6366f1;
+  background: rgba(99, 102, 241, 0.1);
 }
 
 .chat-attach-btn:disabled {
@@ -1076,14 +1073,13 @@ body {
 .image-preview {
   position: relative;
   display: inline-block;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .image-preview-thumb {
-  max-height: 100px;
-  max-width: 160px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border);
+  max-height: 120px;
+  max-width: 200px;
+  border-radius: var(--radius-sm);
   object-fit: cover;
   display: block;
 }
@@ -1092,28 +1088,29 @@ body {
   position: absolute;
   top: -8px;
   right: -8px;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--color-error);
-  border: 2px solid var(--color-bg-secondary);
-  border-radius: var(--radius-full);
+  background: #ef4444;
+  border: 2px solid var(--bg-primary, #1f2937);
+  border-radius: 50%;
   color: white;
   cursor: pointer;
   transition: all var(--transition-fast);
 }
 
 .image-preview-remove:hover {
+  background: #dc2626;
   transform: scale(1.1);
 }
 
 /* Validation / upload error under the input */
 .chat-input-error {
-  color: var(--color-error);
+  color: #ef4444;
   font-size: 13px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   padding: 0 4px;
 }
 
@@ -1124,11 +1121,10 @@ body {
 }
 
 .message-image {
-  max-width: 260px;
-  max-height: 300px;
-  width: auto;
-  height: auto;
-  border-radius: var(--radius-md);
+  max-width: 280px;
+  max-height: 320px;
+  width: 100%;
+  border-radius: var(--radius-sm);
   object-fit: cover;
   cursor: pointer;
   display: block;
@@ -1273,10 +1269,7 @@ body {
 
 /* Edit & Delete Message Styles */
 .message-content-wrapper { display: flex; align-items: flex-start; gap: 8px; }
-/* Vertical column holding the image (top) and caption text (below) so a long
-   caption wraps normally underneath instead of being squeezed beside the image
-   or the menu button. min-width: 0 lets long unbreakable words wrap. */
-.message-content-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }.message-menu-container { position: relative; opacity: 0.3; transition: opacity 0.2s; }  /* Changed to 0.3 so it's visible without hovering */
+.message-menu-container { position: relative; opacity: 0.3; transition: opacity 0.2s; }  /* Changed to 0.3 so it's visible without hovering */
 .message-bubble:hover .message-menu-container { opacity: 1; }
 .message-menu-btn { background: transparent; border: none; color: var(--color-text-tertiary); cursor: pointer; padding: 2px; border-radius: 4px; display: flex; align-items: center; justify-content: center; }
 .message-menu-btn:hover { background: rgba(255,255,255,0.1); color: var(--color-text-primary); }

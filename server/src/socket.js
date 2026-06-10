@@ -2,6 +2,8 @@ import jwt from 'jsonwebtoken'
 import { createAdapter } from '@socket.io/redis-adapter'
 import { createRedisClient, getRedisClient } from './config/redis.js'
 import { produceMessage } from './config/kafka.js'
+import { deleteImage } from './config/cloudinary.js'
+import { checkMessageRateLimit } from './config/ratelimit.js'
 import prisma from './lib/prisma.js'
 import crypto from 'crypto'
 
@@ -289,10 +291,27 @@ export const setupSocketServer = async (io) => {
     socket.on('send-message', async (data, callback) => {
       const t0 = performance.now()
       try {
-        const { conversationId, body } = data
+        const { conversationId, body, image, public_id } = data
 
-        if (!conversationId || !body) {
-          if (callback) callback({ error: 'conversationId and body are required' })
+        // A message must have at least text or an image (image-only is allowed)
+        if (!conversationId || (!body && !image)) {
+          if (callback) callback({ error: 'conversationId and a body or image are required' })
+          return
+        }
+
+        // --- Rate limit (anti-spam) ---
+        // Sliding-window check BEFORE we broadcast or persist anything. If the
+        // user is flooding, they're put on a short cooldown and the message is
+        // dropped. We tell the sender how long until they can send again.
+        const { allowed, retryAfter } = await checkMessageRateLimit(userId)
+        if (!allowed) {
+          if (callback) {
+            callback({
+              error: `You're sending messages too fast. Please wait ${retryAfter}s.`,
+              rateLimited: true,
+              retryAfter
+            })
+          }
           return
         }
 
@@ -303,7 +322,9 @@ export const setupSocketServer = async (io) => {
         // This is what clients will see immediately (before DB persistence)
         const optimisticMessage = {
           id: messageId,
-          body,
+          body: body || null,
+          image: image || null,
+          public_id: public_id || null,
           conversationId,
           userId,
           createdAt: now.toISOString(),
@@ -331,7 +352,9 @@ export const setupSocketServer = async (io) => {
         // ---- PUBLISH TO KAFKA (async persistence) ----
         const kafkaPayload = {
           id: messageId,
-          body,
+          body: body || null,
+          image: image || null,
+          public_id: public_id || null,
           conversationId,
           userId,
           createdAt: now.toISOString()
@@ -348,7 +371,9 @@ export const setupSocketServer = async (io) => {
             prisma.message.create({
               data: {
                 id: messageId,
-                body,
+                body: body || null,
+                image: image || null,
+                public_id: public_id || null,
                 conversationId,
                 userId,
                 createdAt: now
@@ -397,21 +422,47 @@ export const setupSocketServer = async (io) => {
       try {
         if (!messageIds || messageIds.length === 0) return
 
-        // Filter out optimistic temp IDs
+        // Filter out optimistic temp IDs (those aren't in the DB)
         const realMessageIds = messageIds.filter(id => !id.startsWith('temp-'))
 
         if (realMessageIds.length > 0) {
-          // Update DB: connect current user to seenBy relation
-          await Promise.all(
-            realMessageIds.map(msgId =>
-              prisma.message.update({
-                where: { id: msgId },
-                data: { seenBy: { connect: { id: userId } } }
-              }).catch(e => { /* ignore if already seen or not found */ })
+          // Connect the current user to each message's seenBy relation.
+          //
+          // Why the retry: messages sent via Kafka are broadcast instantly but
+          // persisted to PostgreSQL a moment later by the consumer. If we try to
+          // mark one read before the consumer has written it, the row doesn't
+          // exist yet. Previously that error was swallowed and the "seen" status
+          // was lost forever — so on restart those messages re-counted as unread
+          // (the phantom "45 unseen"). We now retry any IDs that weren't found
+          // yet, giving Kafka time to catch up.
+          const connectSeen = async (ids) => {
+            const results = await Promise.all(
+              ids.map(async (msgId) => {
+                try {
+                  await prisma.message.update({
+                    where: { id: msgId },
+                    data: { seenBy: { connect: { id: userId } } }
+                  })
+                  return { msgId, ok: true }
+                } catch {
+                  // Row not in the DB yet (Kafka still persisting) → mark for retry
+                  return { msgId, ok: false }
+                }
+              })
             )
-          )
-        }
+            // Return the IDs that didn't land, so we can retry just those
+            return results.filter(r => !r.ok).map(r => r.msgId)
+          }
 
+          let pending = await connectSeen(realMessageIds)
+
+          // Retry the stragglers a couple of times, giving the Kafka consumer
+          // time to persist them. Short and bounded — not an infinite loop.
+          for (let attempt = 0; attempt < 2 && pending.length > 0; attempt++) {
+            await new Promise(resolve => setTimeout(resolve, 600))
+            pending = await connectSeen(pending)
+          }
+        }
         // Broadcast to room so the sender sees the blue double-tick
         socket.to(conversationId).emit('messages-read', {
           conversationId,
@@ -466,7 +517,15 @@ export const setupSocketServer = async (io) => {
       try {
         if (!messageId) return
 
-        // Soft-delete: mark as deleted (only sender can do this)
+        // Soft-delete: mark as deleted (only sender can do this).
+        // We also clear the image fields and remove the Cloudinary asset so we
+        // don't leave orphaned files in the media library. We read the message
+        // first to grab its public_id before clearing it.
+        const existing = await prisma.message.findFirst({
+          where: { id: messageId, userId },
+          select: { public_id: true }
+        })
+
         await prisma.message.update({
           where: { 
             id: messageId,
@@ -474,9 +533,16 @@ export const setupSocketServer = async (io) => {
           },
           data: { 
             isDeleted: true,
-            body: null // Clear the body
+            body: null,      // Clear the body
+            image: null,     // Clear the image URL
+            public_id: null  // Clear the Cloudinary reference
           }
         })
+
+        // Remove the underlying file from Cloudinary (no-op if there wasn't one)
+        if (existing?.public_id) {
+          await deleteImage(existing.public_id)
+        }
 
         // Broadcast to room so everyone sees the "deleted" placeholder
         io.to(conversationId).emit('message-deleted', {

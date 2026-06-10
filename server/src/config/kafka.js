@@ -220,7 +220,7 @@ export const startConsumer = async () => {
         try {
           const data = JSON.parse(message.value.toString())
 
-          const { id, body, conversationId, userId, createdAt } = data
+          const { id, body, image, public_id, conversationId, userId, createdAt } = data
 
           // Persist to PostgreSQL via Prisma $transaction
           // Same logic that was previously in the socket handler
@@ -228,7 +228,9 @@ export const startConsumer = async () => {
             prisma.message.create({
               data: {
                 id,
-                body,
+                body: body || null,
+                image: image || null,
+                public_id: public_id || null,
                 conversationId,
                 userId,
                 // Use the original timestamp from when the message was sent

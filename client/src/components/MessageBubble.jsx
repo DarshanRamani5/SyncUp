@@ -14,7 +14,7 @@ const formatTime = (dateString) => {
   })
 }
 
-const MessageBubble = ({ message, isSent, isLastMessage }) => {
+const MessageBubble = ({ message, isSent, isLastMessage, recipientOnline = false }) => {
   const { editMessage, deleteMessage, deleteForMe } = useChat()
   const [isEditing, setIsEditing] = useState(false)
   const [editBody, setEditBody] = useState(message.body || '')
@@ -24,11 +24,17 @@ const MessageBubble = ({ message, isSent, isLastMessage }) => {
   // Message is read if seenBy includes someone other than the sender
   const isRead = message.seenBy?.some(u => u.id !== message.userId)
   
-  // Message is delivered to server if it has a real DB UUID (not a temp optimistic ID)
+  // Message has reached the server if it has a real DB UUID (not a temp optimistic ID)
   const isDelivered = message.id && !message.id.startsWith('temp-')
 
-  let tickStr = '✓'
-  if (isRead || isDelivered) tickStr = '✓✓'
+  // Tick states (WhatsApp-style), three tiers:
+  //   single ✓   → sent: persisted on the server, recipient appears offline
+  //   double ✓✓  → delivered: recipient is currently online (presence proxy)
+  //   double ✓✓  → read (blue): recipient has seen it (via the `read` class below)
+  // We approximate "delivered" using presence rather than tracking it in the DB:
+  // online isn't a guarantee the recipient received this specific message, but it
+  // avoids a schema/migration and is good enough for the grey double-tick.
+  const tickStr = (isRead || recipientOnline) ? '✓✓' : '✓'
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -106,7 +112,28 @@ const MessageBubble = ({ message, isSent, isLastMessage }) => {
           </form>
         ) : (
           <div className="message-content-wrapper">
-            <div className="message-body">{message.body}</div>
+            {/* Content column — image stacks above the caption text */}
+            <div className="message-content-main">
+              {/* Image attachment (if any) — rendered above the caption text */}
+              {message.image && (
+                <a
+                  href={message.image}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="message-image-link"
+                >
+                  <img
+                    src={message.image}
+                    alt="Shared"
+                    className="message-image"
+                    loading="lazy"
+                  />
+                </a>
+              )}
+
+              {/* Body text — may be empty for image-only messages */}
+              {message.body && <div className="message-body">{message.body}</div>}
+            </div>
             
             {/* Context Menu — available on ALL messages */}
             {isDelivered && (

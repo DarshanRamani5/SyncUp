@@ -212,7 +212,11 @@ const Sidebar = () => {
                   </div>
                   <div className={`conversation-preview ${unreadCount > 0 ? 'unread' : ''}`}>
                     {lastMessage 
-                      ? `${lastMessage.createdBy?.id === user?.id ? 'You: ' : ''}${lastMessage.body}`
+                      ? `${lastMessage.createdBy?.id === user?.id ? 'You: ' : ''}${
+                          lastMessage.isDeleted
+                            ? 'This message was deleted'
+                            : lastMessage.body || (lastMessage.image ? '📷 Photo' : '')
+                        }`
                       : 'No messages yet'
                     }
                   </div>

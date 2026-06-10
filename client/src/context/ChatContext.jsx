@@ -421,25 +421,58 @@ export const ChatProvider = ({ children }) => {
   }, [activeConversation, hasMoreMessages])
 
   /**
+   * Upload an image to the server (Cloudinary), returning { url, public_id }.
+   * Used by MessageInput before sending an image message.
+   *
+   * The 10 MB / type limits are enforced server-side; we also surface any
+   * error message so the input can show it to the user.
+   */
+  const uploadImage = useCallback(async (file) => {
+    const formData = new FormData()
+    formData.append('image', file)
+
+    // IMPORTANT: do NOT set Content-Type manually for multipart uploads.
+    // The browser must set it to "multipart/form-data; boundary=..." itself —
+    // the boundary is required for the server (multer) to parse the file.
+    // Our axios instance defaults Content-Type to application/json, so we
+    // explicitly clear it here for this one request.
+    const res = await api.post('/messages/upload', formData, {
+      headers: { 'Content-Type': undefined }
+    })
+
+    // { url, public_id } from the upload controller
+    return { image: res.data.url, public_id: res.data.public_id }
+  }, [])
+
+  /**
    * Send a message via Socket.IO (with REST fallback)
    * 
    * Primary: socket.emit('send-message') → server persists + broadcasts
    * Fallback: POST /api/messages (if socket not connected)
+   *
+   * @param {string} body - Message text (may be empty if there's an image)
+   * @param {{ image: string, public_id: string }} [attachment] - Optional image
    */
-  const sendMessage = useCallback(async (body) => {
-    if (!activeConversation || !body.trim()) return
+  const sendMessage = useCallback(async (body, attachment = null) => {
+    const text = (body || '').trim()
+    // Allow image-only messages: require text OR an attachment
+    if (!activeConversation || (!text && !attachment?.image)) return
 
     const socket = getSocket()
+
+    const payload = {
+      conversationId: activeConversation.id,
+      body: text || null,
+      image: attachment?.image || null,
+      public_id: attachment?.public_id || null
+    }
 
     // --- Socket.IO path (preferred) ---
     if (socket?.connected) {
       return new Promise((resolve, reject) => {
         socket.emit(
           'send-message',
-          {
-            conversationId: activeConversation.id,
-            body: body.trim()
-          },
+          payload,
           // Server acknowledgment callback
           (response) => {
             if (response.error) {
@@ -456,10 +489,7 @@ export const ChatProvider = ({ children }) => {
 
     // --- REST fallback (if socket is disconnected) ---
     try {
-      const res = await api.post('/messages', {
-        conversationId: activeConversation.id,
-        body: body.trim()
-      })
+      const res = await api.post('/messages', payload)
 
       // Manually add since we won't get a socket event
       setMessages(prev => [...prev, res.data.message])
@@ -667,6 +697,7 @@ export const ChatProvider = ({ children }) => {
     selectConversation,
     loadMoreMessages,
     sendMessage,
+    uploadImage,
     editMessage,
     deleteMessage,
     deleteForMe,

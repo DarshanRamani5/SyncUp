@@ -1,4 +1,5 @@
 import prisma from '../lib/prisma.js'
+import { uploadImage as uploadToCloudinary, isCloudinaryConfigured } from '../config/cloudinary.js'
 
 /**
  * Message Controller
@@ -19,13 +20,14 @@ import prisma from '../lib/prisma.js'
  */
 const sendMessage = async (req, res) => {
   try {
-    const { conversationId, body } = req.body
+    const { conversationId, body, image, public_id } = req.body
     const userId = req.user.id
 
-    if (!conversationId || !body) {
+    // A message must have at least text or an image (image-only is allowed)
+    if (!conversationId || (!body && !image)) {
       return res.status(400).json({
         status: 400,
-        message: 'conversationId and body are required'
+        message: 'conversationId and a body or image are required'
       })
     }
 
@@ -54,7 +56,9 @@ const sendMessage = async (req, res) => {
       // 1. Create the message
       prisma.message.create({
         data: {
-          body,
+          body: body || null,
+          image: image || null,
+          public_id: public_id || null,
           conversationId,
           userId
         },
@@ -89,4 +93,48 @@ const sendMessage = async (req, res) => {
   }
 }
 
-export { sendMessage }
+/**
+ * POST /api/messages/upload
+ * Multipart body: { image: <file> }  (field name "image", handled by multer)
+ *
+ * Uploads an image to Cloudinary and returns its URL + public_id.
+ * The client then sends a normal message carrying these via Socket.IO,
+ * so real-time delivery is unchanged — this endpoint only handles the file.
+ *
+ * Validation (10 MB cap + allowed types) is enforced by the multer middleware
+ * on the route; by the time we get here, req.file is already known-good.
+ */
+const uploadMessageImage = async (req, res) => {
+  try {
+    if (!isCloudinaryConfigured()) {
+      return res.status(503).json({
+        status: 503,
+        message: 'Image uploads are not available — Cloudinary is not configured'
+      })
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        status: 400,
+        message: 'No image file provided'
+      })
+    }
+
+    // Stream the in-memory buffer up to Cloudinary
+    const { url, public_id } = await uploadToCloudinary(req.file.buffer)
+
+    return res.status(201).json({
+      status: 201,
+      url,
+      public_id
+    })
+  } catch (error) {
+    console.error('uploadMessageImage error:', error)
+    return res.status(500).json({
+      status: 500,
+      message: 'Failed to upload image'
+    })
+  }
+}
+
+export { sendMessage, uploadMessageImage }

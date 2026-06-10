@@ -26,6 +26,7 @@ const ChatArea = () => {
     messages, 
     loadingMessages, 
     sendMessage, 
+    uploadImage,
     hasMoreMessages, 
     loadMoreMessages,
     typingUsers,
@@ -85,6 +86,28 @@ const ChatArea = () => {
       container.scrollTop += heightDifference
       isPaginatingRef.current = false
     }
+  }, [messages])
+
+  // Single source of truth for whether the "Scroll to latest" FAB should show:
+  // true only when the user is meaningfully scrolled up from the bottom.
+  // Used by both the scroll handler and the post-render sync effect below.
+  const isScrolledUpFromBottom = () => {
+    const container = messagesContainerRef.current
+    if (!container) return false
+    return container.scrollHeight - container.scrollTop - container.clientHeight > 100
+  }
+
+  // Keep the FAB in sync after layout-changing renders (new message, an image
+  // finishing load, etc.). Without this the flag only updates on manual scroll,
+  // so a layout shift could leave it stuck visible at the wrong time.
+  // We don't override the intentional "unread separator" case, which sets the
+  // FAB on purpose during the initial jump to the first unread message.
+  useEffect(() => {
+    if (messages.length === 0) {
+      setShowScrollFab(false)
+      return
+    }
+    setShowScrollFab(isScrolledUpFromBottom())
   }, [messages])
 
   // Handle scrolling and marking messages as read when messages change
@@ -192,8 +215,7 @@ const ChatArea = () => {
       return
     }
 
-    const isScrolledUp = container.scrollHeight - container.scrollTop - container.clientHeight > 100
-    setShowScrollFab(isScrolledUp)
+    setShowScrollFab(isScrolledUpFromBottom())
 
     // Trigger pagination when scrolled to the very top
     if (container.scrollTop < 10 && hasMoreMessages && !loadingMessages && !isPaginatingRef.current) {
@@ -233,6 +255,11 @@ const ChatArea = () => {
   }
 
   const otherUser = getOtherUser(activeConversation)
+
+  // Whether the other participant is currently online. Used as a proxy for
+  // "delivered" on the sender's ticks: if they're online, an unread message of
+  // ours is assumed to have reached their device (grey ✓✓) rather than just sent (✓).
+  const recipientOnline = otherUser ? onlineUsers.has(otherUser.id) : false
 
   return (
     <div className="chat-area">
@@ -428,6 +455,7 @@ const ChatArea = () => {
                   message={msg}
                   isSent={msg.userId === user?.id}
                   isLastMessage={index === messages.length - 1}
+                  recipientOnline={recipientOnline}
                 />
               </div>
             </div>
@@ -455,7 +483,7 @@ const ChatArea = () => {
       )}
 
       {/* Message Input */}
-      <MessageInput onSend={sendMessage} onTyping={sendTyping} />
+      <MessageInput onSend={sendMessage} onTyping={sendTyping} onUploadImage={uploadImage} />
     </div>
   )
 }

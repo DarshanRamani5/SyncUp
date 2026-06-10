@@ -1,4 +1,5 @@
 import prisma from '../lib/prisma.js'
+import { deleteImage } from '../config/cloudinary.js'
 
 /**
  * Conversation Controller
@@ -335,11 +336,18 @@ const deleteConversation = async (req, res) => {
       })
     }
 
-    // Get all message IDs in this conversation
+    // Get all message IDs (and Cloudinary refs) in this conversation
     const messages = await prisma.message.findMany({
       where: { conversationId: id },
-      select: { id: true }
+      select: { id: true, public_id: true }
     })
+
+    // Remove any uploaded images from Cloudinary so we don't orphan files.
+    // Runs in parallel; each delete is a no-op if there's no public_id.
+    const imagePublicIds = messages.map(m => m.public_id).filter(Boolean)
+    if (imagePublicIds.length > 0) {
+      await Promise.all(imagePublicIds.map(pid => deleteImage(pid)))
+    }
 
     // Clear implicit many-to-many relations (seenBy, deletedBy) for each message
     if (messages.length > 0) {
