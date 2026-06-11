@@ -4,8 +4,10 @@ import { createRedisClient, getRedisClient } from './config/redis.js'
 import { produceMessage } from './config/kafka.js'
 import { deleteImage } from './config/cloudinary.js'
 import { checkMessageRateLimit } from './config/ratelimit.js'
+import { areFriends } from './lib/friendship.js'
 import prisma from './lib/prisma.js'
 import crypto from 'crypto'
+
 
 /**
  * Socket.IO Server Setup
@@ -315,6 +317,27 @@ export const setupSocketServer = async (io) => {
           return
         }
 
+        // --- Friends-only gate ---
+        // 1. Sender must be a participant of the conversation (security)
+        // 2. For 1-1 chats: the two users must currently be friends.
+        //    Group chats skip the friendship check — membership governs those.
+        const conversation = await prisma.conversation.findUnique({
+          where: { id: conversationId },
+          select: { isGroup: true, users: { select: { userId: true } } }
+        })
+
+        if (!conversation || !conversation.users.some(u => u.userId === userId)) {
+          if (callback) callback({ error: 'You are not a participant in this conversation' })
+          return
+        }
+
+        if (!conversation.isGroup) {
+          const other = conversation.users.find(u => u.userId !== userId)
+          if (other && !(await areFriends(userId, other.userId))) {
+            if (callback) callback({ error: 'You are no longer friends with this user. Add them as a friend to chat again.' })
+            return
+          }
+        }
         const now = new Date()
         const messageId = crypto.randomUUID()
 

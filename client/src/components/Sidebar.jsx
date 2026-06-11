@@ -1,29 +1,31 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useChat } from '../context/ChatContext.jsx'
+import NewGroupModal from './NewGroupModal.jsx'
 import api from '../lib/api.js'
 
 /**
  * Sidebar
- * 
+ *
  * Left panel of the chat layout. Shows:
- * - App logo + logout button
- * - Search bar to filter conversations
- * - List of conversations with last message preview
- * - "New Chat" button that opens a user list modal
- * 
- * Features:
- * - Filter conversations by participant name
- * - Active conversation highlighting
- * - User list modal to start new conversations
- * - Time formatting (just now, 5m, 2h, Jan 15)
+ * - App logo + Friends / Logout buttons
+ * - Search bar to filter conversations (matches names AND group names)
+ * - Conversation list — 1-1 chats and GROUPS
+ * - "New Chat" (friends only) and "New Group" buttons
+ *
+ * Group-aware display:
+ * - Group rows show the group name and a 👥-style initials avatar
+ * - Group previews are prefixed with the sender's name ("Alice: hi all")
+ * - Online dot only shown for 1-1 chats (presence is per-user)
  */
 const Sidebar = () => {
   const { user, logout } = useAuth()
-  const { 
-    conversations, 
-    activeConversation, 
-    fetchConversations, 
+  const navigate = useNavigate()
+  const {
+    conversations,
+    activeConversation,
+    fetchConversations,
     selectConversation,
     createConversation,
     onlineUsers,
@@ -33,6 +35,7 @@ const Sidebar = () => {
 
   const [searchQuery, setSearchQuery] = useState('')
   const [showUserList, setShowUserList] = useState(false)
+  const [showNewGroup, setShowNewGroup] = useState(false)
   const [allUsers, setAllUsers] = useState([])
   const [loadingUsers, setLoadingUsers] = useState(false)
 
@@ -53,6 +56,14 @@ const Sidebar = () => {
   }
 
   /**
+   * Display name for any conversation: group name, or the other user's name
+   */
+  const getConversationName = (conversation) => {
+    if (conversation.isGroup) return conversation.name || 'Group'
+    return getOtherUser(conversation)?.name || 'Unknown'
+  }
+
+  /**
    * Get initials from a name
    */
   const getInitials = (name) => {
@@ -67,11 +78,6 @@ const Sidebar = () => {
 
   /**
    * Format relative time for conversation preview
-   * - Under 1 min: "Just now"
-   * - Under 1 hour: "5m"
-   * - Under 24 hours: "2h"
-   * - Under 7 days: "3d"
-   * - Else: "Jan 15"
    */
   const formatRelativeTime = (dateString) => {
     if (!dateString) return ''
@@ -91,33 +97,32 @@ const Sidebar = () => {
   }
 
   /**
-   * Filter conversations by search query
-   * Matches against the other participant's name
+   * Filter conversations by search query — matches the other participant's
+   * name for 1-1 chats and the group name for groups.
    */
   const filteredConversations = conversations.filter(conv => {
     if (!searchQuery.trim()) return true
-    const otherUser = getOtherUser(conv)
-    return otherUser?.name?.toLowerCase().includes(searchQuery.toLowerCase())
+    return getConversationName(conv).toLowerCase().includes(searchQuery.toLowerCase())
   })
 
   /**
-   * Open the user list modal and fetch all users
+   * Open the new chat modal — FRIENDS ONLY (WhatsApp style)
    */
   const handleNewChat = async () => {
     setShowUserList(true)
     setLoadingUsers(true)
     try {
-      const res = await api.get('/users')
-      setAllUsers(res.data.users)
+      const res = await api.get('/friends')
+      setAllUsers(res.data.friends)
     } catch (error) {
-      console.error('Failed to fetch users:', error)
+      console.error('Failed to fetch friends:', error)
     } finally {
       setLoadingUsers(false)
     }
   }
 
   /**
-   * Start a conversation with a selected user
+   * Start a conversation with a selected friend
    */
   const handleSelectUser = async (targetUser) => {
     setShowUserList(false)
@@ -126,6 +131,26 @@ const Sidebar = () => {
     } catch (error) {
       console.error('Failed to create conversation:', error)
     }
+  }
+
+  /**
+   * Build the last-message preview line.
+   * Groups prefix the sender's first name; your own messages show "You:".
+   */
+  const getPreview = (conv) => {
+    const lastMessage = conv.messages?.[0]
+    if (!lastMessage) return 'No messages yet'
+
+    const content = lastMessage.isDeleted
+      ? 'This message was deleted'
+      : lastMessage.body || (lastMessage.image ? '📷 Photo' : '')
+
+    if (lastMessage.createdBy?.id === user?.id) return `You: ${content}`
+    if (conv.isGroup) {
+      const firstName = (lastMessage.createdBy?.name || '').split(' ')[0]
+      return firstName ? `${firstName}: ${content}` : content
+    }
+    return content
   }
 
   return (
@@ -137,14 +162,24 @@ const Sidebar = () => {
             <div className="sidebar-logo-icon">S</div>
             <span className="sidebar-logo-text">SyncUp</span>
           </div>
-          <button 
-            className="sidebar-logout-btn" 
-            onClick={logout}
-            id="logout-btn"
-            title="Logout"
-          >
-            Logout
-          </button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              className="sidebar-logout-btn"
+              onClick={() => navigate('/friends')}
+              id="friends-btn"
+              title="Friends"
+            >
+              Friends
+            </button>
+            <button
+              className="sidebar-logout-btn"
+              onClick={logout}
+              id="logout-btn"
+              title="Logout"
+            >
+              Logout
+            </button>
+          </div>
         </div>
 
         {/* Search */}
@@ -189,73 +224,89 @@ const Sidebar = () => {
             </div>
           ) : (
             filteredConversations.map((conv, idx) => {
-            const otherUser = getOtherUser(conv)
-            const lastMessage = conv.messages?.[0]
-            const isActive = activeConversation?.id === conv.id
-            const unreadCount = unreadCounts[conv.id] || 0
+              const isGroup = !!conv.isGroup
+              const otherUser = isGroup ? null : getOtherUser(conv)
+              const lastMessage = conv.messages?.[0]
+              const isActive = activeConversation?.id === conv.id
+              const unreadCount = unreadCounts[conv.id] || 0
 
-            return (
-              <div
-                key={conv.id}
-                className={`conversation-item animate-slide-up ${isActive ? 'active' : ''}`}
-                style={{ animationDelay: `${idx * 0.05}s` }}
-                onClick={() => selectConversation(conv)}
-                id={`conversation-${conv.id}`}
-              >
-                <div className="avatar">
-                  {getInitials(otherUser?.name)}
-                  <span className={`avatar-status ${otherUser && onlineUsers.has(otherUser.id) ? 'online' : ''}`}></span>
-                </div>
-                <div className="conversation-info">
-                  <div className="conversation-name">
-                    {otherUser?.name || 'Unknown'}
+              return (
+                <div
+                  key={conv.id}
+                  className={`conversation-item animate-slide-up ${isActive ? 'active' : ''}`}
+                  style={{ animationDelay: `${idx * 0.05}s` }}
+                  onClick={() => selectConversation(conv)}
+                  id={`conversation-${conv.id}`}
+                >
+                  <div className={`avatar ${isGroup ? 'group-avatar' : ''}`}>
+                    {getInitials(getConversationName(conv))}
+                    {/* Online dot only makes sense for 1-1 chats */}
+                    {!isGroup && (
+                      <span className={`avatar-status ${otherUser && onlineUsers.has(otherUser.id) ? 'online' : ''}`}></span>
+                    )}
                   </div>
-                  <div className={`conversation-preview ${unreadCount > 0 ? 'unread' : ''}`}>
-                    {lastMessage 
-                      ? `${lastMessage.createdBy?.id === user?.id ? 'You: ' : ''}${
-                          lastMessage.isDeleted
-                            ? 'This message was deleted'
-                            : lastMessage.body || (lastMessage.image ? '📷 Photo' : '')
-                        }`
-                      : 'No messages yet'
-                    }
-                  </div>
-                </div>
-                <div className="conversation-meta">
-                  <div className={`conversation-time ${unreadCount > 0 ? 'unread' : ''}`}>
-                    {lastMessage 
-                      ? formatRelativeTime(lastMessage.createdAt)
-                      : formatRelativeTime(conv.createdAt)
-                    }
-                  </div>
-                  {unreadCount > 0 && (
-                    <div className="unread-badge animate-scale-in">
-                      {unreadCount}
+                  <div className="conversation-info">
+                    <div className="conversation-name">
+                      {getConversationName(conv)}
+                      {isGroup && (
+                        <span className="group-tag">Group</span>
+                      )}
                     </div>
-                  )}
+                    <div className={`conversation-preview ${unreadCount > 0 ? 'unread' : ''}`}>
+                      {getPreview(conv)}
+                    </div>
+                  </div>
+                  <div className="conversation-meta">
+                    <div className={`conversation-time ${unreadCount > 0 ? 'unread' : ''}`}>
+                      {lastMessage 
+                        ? formatRelativeTime(lastMessage.createdAt)
+                        : formatRelativeTime(conv.createdAt)
+                      }
+                    </div>
+                    {unreadCount > 0 && (
+                      <div className="unread-badge animate-scale-in">
+                        {unreadCount}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )
-          }))}
+              )
+            })
+          )}
         </div>
 
-        {/* New Chat Button */}
+        {/* New Chat / New Group Buttons */}
         <div className="new-chat-section">
-          <button 
-            className="new-chat-btn" 
-            onClick={handleNewChat}
-            id="new-chat-btn"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-            New Chat
-          </button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button 
+              className="new-chat-btn" 
+              onClick={handleNewChat}
+              id="new-chat-btn"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              New Chat
+            </button>
+            <button
+              className="new-chat-btn group"
+              onClick={() => setShowNewGroup(true)}
+              id="new-group-btn"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="9" cy="7" r="4"></circle>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+              </svg>
+              New Group
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* User List Modal */}
+      {/* New Chat Modal — shows ONLY the user's friends */}
       {showUserList && (
         <div 
           className="user-list-overlay" 
@@ -279,16 +330,24 @@ const Sidebar = () => {
                   <div className="loading-spinner"></div>
                 </div>
               )}
+
               {!loadingUsers && allUsers.length === 0 && (
-                <div style={{ 
-                  textAlign: 'center', 
-                  padding: '24px',
-                  color: 'var(--color-text-tertiary)',
-                  fontSize: '13px'
-                }}>
-                  No users found
+                <div className="new-chat-empty">
+                  <p>You can only chat with people on your friends list.</p>
+                  <p>Find people by their @username and send them a friend request.</p>
+                  <button
+                    className="friends-btn primary"
+                    onClick={() => {
+                      setShowUserList(false)
+                      navigate('/friends')
+                    }}
+                    id="go-add-friend-btn"
+                  >
+                    Add a Friend
+                  </button>
                 </div>
               )}
+
               {!loadingUsers && allUsers.map(u => (
                 <div
                   key={u.id}
@@ -296,18 +355,26 @@ const Sidebar = () => {
                   onClick={() => handleSelectUser(u)}
                   id={`user-${u.id}`}
                 >
-                  <div className="avatar sm">
+                  <div
+                    className="avatar sm"
+                    style={u.color ? { background: u.color } : undefined}
+                  >
                     {getInitials(u.name)}
                   </div>
                   <div>
                     <div className="user-list-item-name">{u.name}</div>
-                    <div className="user-list-item-email">{u.email}</div>
+                    <div className="user-list-item-email">@{u.username}</div>
                   </div>
                 </div>
               ))}
             </div>
           </div>
         </div>
+      )}
+
+      {/* New Group Modal */}
+      {showNewGroup && (
+        <NewGroupModal onClose={() => setShowNewGroup(false)} />
       )}
     </>
   )

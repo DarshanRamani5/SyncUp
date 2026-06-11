@@ -17,6 +17,14 @@ model User {
   id           String  @id @default(cuid()) @db.VarChar(30)
   name         String? @db.VarChar(200)
   email        String  @unique
+
+  // NEW: Unique public handle (Discord/Telegram style, e.g. "harsh_dev")
+  // - Optional (String?) at the DB level so existing rows don't break the
+  //   migration, but REQUIRED at registration time (enforced in the controller).
+  // - Always stored lowercase so "Harsh_Dev" and "harsh_dev" can't both exist.
+  // - This is what users share publicly instead of their email.
+  username     String? @unique @db.VarChar(32)
+
   passwordHash String
   avatarUrl    String?
   color        String? @db.VarChar(8)
@@ -64,18 +72,24 @@ model FriendRequest {
   status     FriendRequestStatus @default(pending)
   createdAt  DateTime            @default(now())
   updatedAt  DateTime            @updatedAt
+
+  // NEW: a user can only have ONE request row per receiver.
+  // Prevents spamming someone with 50 pending requests.
+  @@unique([senderId, receiverId])
 }
 
 // =========================================
 // Conversation ↔ User Join Table
 // =========================================
-// Composite primary key (userId + conversationId) — no separate UUID needed.
-// This replaces the previous "Participant" model.
+// Composite primary key (userId + conversationId).
+// isAdmin: NEW — group admin flag. The group creator becomes admin;
+// only admins can rename the group, add members, or remove members.
 model ConversationsOnUsers {
   user           User         @relation(fields: [userId], references: [id])
   userId         String       @db.VarChar(30)
   conversation   Conversation @relation(fields: [conversationId], references: [id])
   conversationId String       @db.Uuid
+  isAdmin        Boolean      @default(false)
 
   @@id([userId, conversationId])
 }
@@ -84,13 +98,13 @@ model ConversationsOnUsers {
 // Conversation Model
 // =========================================
 model Conversation {
-  id            String               @id @default(uuid()) @db.Uuid
+  id            String                 @id @default(uuid()) @db.Uuid
   name          String?
-  isGroup       Boolean?             @default(false)
+  isGroup       Boolean?               @default(false)
   image         String?
   users         ConversationsOnUsers[]
-  createdAt     DateTime             @default(now())
-  lastMessageAt DateTime             @default(now())
+  createdAt     DateTime               @default(now())
+  lastMessageAt DateTime               @default(now())
   messages      Message[]
 
   @@index([createdAt])
@@ -119,8 +133,8 @@ model Message {
   conversationId String       @db.Uuid
   Conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
-  isEdited  Boolean?  @default(false)
-  isDeleted Boolean   @default(false)
+  isEdited  Boolean? @default(false)
+  isDeleted Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

@@ -5,19 +5,20 @@ import ProtectedRoute from './components/ProtectedRoute.jsx'
 import LoginPage from './pages/LoginPage.jsx'
 import RegisterPage from './pages/RegisterPage.jsx'
 import ChatPage from './pages/ChatPage.jsx'
+import FriendsPage from './pages/FriendsPage.jsx'
 
 /**
  * App
- * 
- * Root component that sets up:
+ *
+  * Root component that sets up:
  * 1. AuthProvider — wraps everything for auth state
  * 2. ChatProvider — wraps chat pages for conversation/message state
  * 3. Router — handles navigation between pages
- * 
  * Routes:
  * - /login    → LoginPage (public)
  * - /register → RegisterPage (public)
- * - /chat     → ChatPage (protected — requires auth)
+ * - /chat     → ChatPage (protected)
+ * - /friends  → FriendsPage (protected) — NEW: add friend / requests / friends list
  * - /         → Redirects to /chat
  * - *         → Redirects to /chat (catch-all)
  */
@@ -37,6 +38,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <ChatPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/friends"
+              element={
+                <ProtectedRoute>
+                  <FriendsPage />
                 </ProtectedRoute>
               }
             />

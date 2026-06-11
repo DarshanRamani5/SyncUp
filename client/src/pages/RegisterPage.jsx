@@ -4,16 +4,20 @@ import { useAuth } from '../context/AuthContext.jsx'
 
 /**
  * RegisterPage
- * 
+ *
  * Premium dark-themed registration form with glassmorphism effects.
- * - Name, email, password fields
- * - Client-side validation
+ * - Name, USERNAME (new), email, password fields
+ * - Client-side validation (username format checked live)
  * - Loading state on submit
- * - Link to login page
  * - Redirects to /chat on successful registration
  */
+
+// Same rules as the server: 3-20 chars, lowercase letters/numbers/underscore
+const USERNAME_REGEX = /^[a-z0-9_]{3,20}$/
+
 const RegisterPage = () => {
   const [name, setName] = useState('')
+  const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -22,13 +26,32 @@ const RegisterPage = () => {
   const { register } = useAuth()
   const navigate = useNavigate()
 
+  /**
+   * Sanitize as the user types:
+   * lowercase, strip leading @, drop anything invalid.
+   * This makes it impossible to even TYPE an invalid username.
+   */
+  const handleUsernameChange = (e) => {
+    const cleaned = e.target.value
+      .toLowerCase()
+      .replace(/^@+/, '')
+      .replace(/[^a-z0-9_]/g, '')
+      .slice(0, 20)
+    setUsername(cleaned)
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
 
     // Client-side validation
-    if (!name || !email || !password) {
+    if (!name || !username || !email || !password) {
       setError('Please fill in all fields')
+      return
+    }
+
+    if (!USERNAME_REGEX.test(username)) {
+      setError('Username must be 3-20 characters (lowercase letters, numbers, underscores)')
       return
     }
 
@@ -39,7 +62,7 @@ const RegisterPage = () => {
 
     setLoading(true)
     try {
-      await register(name, email, password)
+      await register(name, username, email, password)
       navigate('/chat', { replace: true })
     } catch (err) {
       const message = err.response?.data?.message || 'Registration failed. Please try again.'
@@ -70,19 +93,41 @@ const RegisterPage = () => {
 
         {/* Form */}
         <form className="auth-form" onSubmit={handleSubmit} id="register-form">
-          <div className="form-group">
-            <label className="form-label" htmlFor="register-name">Full Name</label>
-            <input
-              className="form-input"
-              id="register-name"
-              type="text"
-              placeholder="John Doe"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              autoComplete="name"
-              autoFocus
-            />
+          {/* Full Name + Username side by side to keep the card compact */}
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label" htmlFor="register-name">Full Name</label>
+              <input
+                className="form-input"
+                id="register-name"
+                type="text"
+                placeholder="John Doe"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                autoComplete="name"
+                autoFocus
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="register-username">Username</label>
+              <div className="username-input-wrapper">
+                <span className="username-at">@</span>
+                <input
+                  className="form-input username-input"
+                  id="register-username"
+                  type="text"
+                  placeholder="john_doe"
+                  value={username}
+                  onChange={handleUsernameChange}
+                  autoComplete="off"
+                />
+              </div>
+            </div>
           </div>
+          <span className="form-hint form-hint-row">
+            Friends find you by your @username — lowercase letters, numbers, underscores.
+          </span>
 
           <div className="form-group">
             <label className="form-label" htmlFor="register-email">Email</label>

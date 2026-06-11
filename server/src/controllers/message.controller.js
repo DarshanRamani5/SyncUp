@@ -1,5 +1,6 @@
 import prisma from '../lib/prisma.js'
 import { uploadImage as uploadToCloudinary, isCloudinaryConfigured } from '../config/cloudinary.js'
+import { areFriends } from '../lib/friendship.js'
 
 /**
  * Message Controller
@@ -47,6 +48,22 @@ const sendMessage = async (req, res) => {
         status: 403,
         message: 'You are not a participant in this conversation'
       })
+    }
+
+    // --- Friends-only gate (1-1 chats) ---
+    const conversation = await prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: { isGroup: true, users: { select: { userId: true } } }
+    })
+
+    if (conversation && !conversation.isGroup) {
+      const other = conversation.users.find(u => u.userId !== userId)
+      if (other && !(await areFriends(userId, other.userId))) {
+        return res.status(403).json({
+          status: 403,
+          message: 'You are no longer friends with this user. Add them as a friend to chat again.'
+        })
+      }
     }
 
     // --- Use a Prisma transaction ---

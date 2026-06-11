@@ -4,33 +4,59 @@ import prisma from '../lib/prisma.js'
 
 /**
  * Auth Controller
- * 
+ *
  * Handles user authentication:
- * - register: Create new user with hashed password, return JWT
- * - login: Verify credentials, return JWT
+ * - register: Create new user with hashed password + unique username, return JWT
+ * - login: Verify credentials (email OR username), return JWT
  * - me: Return current user from JWT (session check)
  */
 
 /**
+ * Username rules (Discord/Telegram style):
+ * - 3 to 20 characters
+ * - lowercase letters, numbers, underscores only
+ * - stored lowercase, leading "@" stripped if the user types one
+ */
+const USERNAME_REGEX = /^[a-z0-9_]{3,20}$/
+
+/**
+ * Normalize whatever the user typed into a canonical username:
+ * "@Harsh_Dev " → "harsh_dev"
+ */
+const normalizeUsername = (raw) => {
+  if (!raw || typeof raw !== 'string') return ''
+  return raw.trim().replace(/^@+/, '').toLowerCase()
+}
+
+/**
  * POST /api/auth/register
- * 
+ *
  * Flow:
- * 1. Validate input (name, email, password)
- * 2. Check if email already exists
- * 3. Hash the password with bcrypt (never store plain text!)
- * 4. Create user in database
- * 5. Sign a JWT with user info
- * 6. Return the token + user data
+ * 1. Validate input (name, username, email, password)
+ * 2. Validate username format + check uniqueness
+ * 3. Check if email already exists
+ * 4. Hash the password with bcrypt
+ * 5. Create user in database
+ * 6. Sign a JWT, return token + user data
  */
 const register = async (req, res) => {
   try {
     const { name, email, password } = req.body
+    const username = normalizeUsername(req.body.username)
 
     // --- Validation ---
-    if (!name || !email || !password) {
+    if (!name || !username || !email || !password) {
       return res.status(400).json({
         status: 400,
-        message: 'Name, email, and password are required'
+        message: 'Name, username, email, and password are required'
+      })
+    }
+
+    if (!USERNAME_REGEX.test(username)) {
+      return res.status(400).json({
+        status: 400,
+        message:
+          'Username must be 3-20 characters and contain only lowercase letters, numbers, and underscores'
       })
     }
 
@@ -41,21 +67,28 @@ const register = async (req, res) => {
       })
     }
 
-    // --- Check if user already exists ---
-    const existingUser = await prisma.user.findUnique({
-      where: { email }
+    // --- Check if email OR username is already taken ---
+    // One query instead of two: find any user matching either field.
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        OR: [{ email }, { username }]
+      },
+      select: { email: true, username: true }
     })
 
     if (existingUser) {
+      // Tell the user WHICH field clashed so they can fix the right one
+      const clash =
+        existingUser.email === email
+          ? 'An account with this email already exists'
+          : `The username @${username} is already taken`
       return res.status(409).json({
         status: 409,
-        message: 'An account with this email already exists'
+        message: clash
       })
     }
 
     // --- Hash password ---
-    // Salt rounds = 10: good balance of security vs speed
-    // bcrypt adds a random "salt" so even identical passwords produce different hashes
     const salt = await bcrypt.genSalt(10)
     const passwordHash = await bcrypt.hash(password, salt)
 
@@ -63,32 +96,31 @@ const register = async (req, res) => {
     const user = await prisma.user.create({
       data: {
         name,
+        username,
         email,
         passwordHash
       }
     })
 
     // --- Generate JWT ---
-    // The payload is what gets encoded into the token
-    // Anyone can decode a JWT to READ this data, but can't MODIFY it without the secret
     const tokenPayload = {
       id: user.id,
       name: user.name,
+      username: user.username,
       email: user.email
     }
 
     const token = jwt.sign(tokenPayload, process.env.JWT_SECRET, {
-      expiresIn: '7d' // Token valid for 7 days
+      expiresIn: '7d'
     })
 
-    // --- Return response ---
-    // We never return the passwordHash to the client!
     return res.status(201).json({
       status: 201,
       message: 'User registered successfully',
       user: {
         id: user.id,
         name: user.name,
+        username: user.username,
         email: user.email,
         avatarUrl: user.avatarUrl,
         createdAt: user.createdAt
@@ -96,6 +128,14 @@ const register = async (req, res) => {
       token: `Bearer ${token}`
     })
   } catch (error) {
+    // Safety net: if two requests race past the findFirst check, the DB's
+    // unique constraint throws P2002 — translate it to a friendly 409.
+    if (error.code === 'P2002') {
+      return res.status(409).json({
+        status: 409,
+        message: 'Email or username is already taken'
+      })
+    }
     console.error('Register error:', error)
     return res.status(500).json({
       status: 500,
@@ -106,45 +146,45 @@ const register = async (req, res) => {
 
 /**
  * POST /api/auth/login
- * 
- * Flow:
- * 1. Find user by email
- * 2. Compare provided password with stored hash using bcrypt
- * 3. If match, sign and return JWT
- * 4. If no match, return 401
+ *
+ * Accepts EITHER an email or a username in the "email" field
+ * (kept the same field name so the existing client keeps working).
+ * If the value contains "@" + "." it's treated as an email,
+ * otherwise we try it as a username.
  */
 const login = async (req, res) => {
   try {
-    const { email, password } = req.body
+    const { email: identifier, password } = req.body
 
-    if (!email || !password) {
+    if (!identifier || !password) {
       return res.status(400).json({
         status: 400,
-        message: 'Email and password are required'
+        message: 'Email/username and password are required'
       })
     }
 
-    // --- Find user ---
-    const user = await prisma.user.findUnique({
-      where: { email }
-    })
+    // --- Find user by email OR username ---
+    const looksLikeEmail = identifier.includes('@') && identifier.includes('.')
+    const user = looksLikeEmail
+      ? await prisma.user.findUnique({ where: { email: identifier } })
+      : await prisma.user.findUnique({
+          where: { username: normalizeUsername(identifier) }
+        })
 
     if (!user) {
       return res.status(401).json({
         status: 401,
-        message: 'Invalid email or password'
+        message: 'Invalid credentials'
       })
     }
 
     // --- Verify password ---
-    // bcrypt.compare hashes the provided password with the same salt
-    // and checks if the result matches the stored hash
     const isPasswordValid = await bcrypt.compare(password, user.passwordHash)
 
     if (!isPasswordValid) {
       return res.status(401).json({
         status: 401,
-        message: 'Invalid email or password'
+        message: 'Invalid credentials'
       })
     }
 
@@ -152,6 +192,7 @@ const login = async (req, res) => {
     const tokenPayload = {
       id: user.id,
       name: user.name,
+      username: user.username,
       email: user.email
     }
 
@@ -165,6 +206,7 @@ const login = async (req, res) => {
       user: {
         id: user.id,
         name: user.name,
+        username: user.username,
         email: user.email,
         avatarUrl: user.avatarUrl,
         createdAt: user.createdAt
@@ -182,12 +224,8 @@ const login = async (req, res) => {
 
 /**
  * GET /api/auth/me
- * 
+ *
  * Protected route — requires auth middleware to run first.
- * The middleware already verified the JWT and attached user to req.user.
- * We just need to fetch the fresh user data from the database.
- * 
- * The frontend calls this on app load to check if the stored token is still valid.
  */
 const me = async (req, res) => {
   try {
@@ -196,6 +234,7 @@ const me = async (req, res) => {
       select: {
         id: true,
         name: true,
+        username: true,
         email: true,
         avatarUrl: true,
         createdAt: true

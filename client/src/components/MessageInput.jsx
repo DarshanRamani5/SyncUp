@@ -14,6 +14,15 @@ import { useState, useRef, useEffect, useCallback } from 'react'
  *   pick file → client-side validate (type + 10 MB) → show preview →
  *   on send: onUploadImage(file) → { image, public_id } → onSend(text, attachment)
  * 
+ * Focus behavior (UX):
+ * - After picking an image, focus returns to the textarea so Enter sends.
+ * - The textarea is NOT disabled while sending — disabling a focused element
+ *   makes the browser blur it, which is why the cursor used to disappear
+ *   after every send. Double-sends are prevented by the `sending` guard
+ *   in handleSend instead.
+ * - A useEffect refocuses after each send finishes (covers mouse-clicking
+ *   the send button, which moves focus to the button).
+ * 
  * Props:
  * - onSend: (messageText, attachment?) => void — called when user sends
  * - onTyping: (isTyping) => void — typing indicator
@@ -28,7 +37,7 @@ const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
 const MessageInput = ({ onSend, onTyping, onUploadImage, disabled = false }) => {
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
-  const [imageFile, setImageFile] = useState(null)     // the File the user picked
+  const [imageFile, setImageFile] = useState(null)       // the File the user picked
   const [imagePreview, setImagePreview] = useState(null) // object URL for preview
   const [error, setError] = useState('')
   const textareaRef = useRef(null)
@@ -51,6 +60,17 @@ const MessageInput = ({ onSend, onTyping, onUploadImage, disabled = false }) => 
     }
   }, [imagePreview])
 
+  // Refocus the textarea whenever a send finishes (success or failure).
+  // useEffect runs AFTER the re-render, so the element is guaranteed to be
+  // enabled and present — unlike a setTimeout race inside the handler.
+  const prevSendingRef = useRef(false)
+  useEffect(() => {
+    if (prevSendingRef.current && !sending && !disabled) {
+      textareaRef.current?.focus()
+    }
+    prevSendingRef.current = sending
+  }, [sending, disabled])
+
   /**
    * Validate and stage a picked file for sending.
    */
@@ -72,6 +92,12 @@ const MessageInput = ({ onSend, onTyping, onUploadImage, disabled = false }) => 
     setError('')
     setImageFile(file)
     setImagePreview(URL.createObjectURL(file))
+
+    // Return focus to the textarea so Enter immediately sends.
+    // Without this, focus stays on the paperclip button and pressing Enter
+    // re-opens the file picker. setTimeout(…, 0) lets the file dialog
+    // finish closing first.
+    setTimeout(() => textareaRef.current?.focus(), 0)
   }
 
   /**
@@ -81,11 +107,15 @@ const MessageInput = ({ onSend, onTyping, onUploadImage, disabled = false }) => 
     setImageFile(null)
     setImagePreview(null)
     setError('')
+    // Keep the user's cursor in the text box after removing an image
+    textareaRef.current?.focus()
   }
 
   const handleSend = async () => {
     const trimmed = text.trim()
-    // Nothing to send if there's neither text nor an image
+    // Nothing to send if there's neither text nor an image.
+    // The `sending` guard also prevents double-sends while the textarea
+    // stays enabled (Enter pressed twice quickly does nothing the 2nd time).
     if ((!trimmed && !imageFile) || sending || disabled) return
 
     setSending(true)
@@ -195,7 +225,7 @@ const MessageInput = ({ onSend, onTyping, onUploadImage, disabled = false }) => 
             }
           }}
           onKeyDown={handleKeyDown}
-          disabled={disabled || sending}
+          disabled={disabled}
           rows={1}
           id="message-input"
         />

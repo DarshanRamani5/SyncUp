@@ -1311,3 +1311,443 @@ body {
 .message-select-row.selected { background: rgba(99, 102, 241, 0.1); border-radius: 8px; }
 .message-checkbox { display: flex; align-items: center; padding-top: 12px; padding-left: 8px; flex-shrink: 0; }
 .message-checkbox input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--color-accent); cursor: pointer; }
+
+/* --- Username field (RegisterPage) --- */
+.username-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.username-at {
+  position: absolute;
+  left: 14px;
+  color: var(--color-text-tertiary);
+  font-size: 14px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.username-input {
+  padding-left: 32px !important;
+  width: 100%;
+}
+
+.form-hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  line-height: 1.4;
+}
+
+/* --- Auth page: fit on one screen, scroll only if truly needed --- */
+.auth-page {
+  height: auto;
+  min-height: 100vh;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.auth-card {
+  margin: auto;
+  padding: 24px 32px;
+  max-width: 460px;
+  width: 100%;
+}
+
+/* Tighter header */
+.auth-logo { margin-bottom: 12px; }
+.auth-title { font-size: 20px; }
+.auth-subtitle { margin-bottom: 14px; font-size: 13px; }
+
+/* Tighter form spacing */
+.auth-form { gap: 10px; }
+.auth-form .form-group { margin-bottom: 8px; }
+.form-label { margin-bottom: 4px; font-size: 12px; }
+.form-input { padding-top: 9px; padding-bottom: 9px; }
+.auth-btn { margin-top: 6px; }
+.auth-footer { margin-top: 12px; }
+
+/* Side-by-side Full Name + Username */
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.form-row .form-group {
+  margin-bottom: 0;
+  min-width: 0; /* lets inputs shrink inside the grid */
+}
+
+/* One-line hint under the row */
+.form-hint,
+.form-hint-row {
+  display: block;
+  margin: -2px 0 6px;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  line-height: 1.4;
+}
+
+/* Stack the row on small screens */
+@media (max-width: 480px) {
+  .form-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+}
+
+/* --- Friends Page --- */
+.friends-page {
+  min-height: 100vh;
+  height: auto;
+  overflow-y: auto;
+  display: flex;
+  justify-content: center;
+  padding: 24px 16px;
+  background: var(--color-bg-primary);
+}
+
+.friends-card {
+  margin: auto;
+  width: 100%;
+  max-width: 560px;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-glass-border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+}
+
+.friends-header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.friends-header h1 {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.friends-back-btn {
+  align-self: flex-start;
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0;
+  font-family: var(--font-family);
+}
+
+.friends-back-btn:hover { color: var(--color-text-primary); }
+
+.friends-feedback {
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+
+.friends-feedback.success {
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  color: #4ade80;
+}
+
+.friends-feedback.error {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #f87171;
+}
+
+.friends-tabs {
+  display: flex;
+  gap: 6px;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 16px;
+}
+
+.friends-tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font-family);
+  padding: 10px 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.friends-tab:hover { color: var(--color-text-primary); }
+
+.friends-tab.active {
+  color: var(--color-text-primary);
+  border-bottom-color: #6366f1;
+}
+
+.friends-tab-badge {
+  background: #6366f1;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+}
+
+.friends-search-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.friends-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  margin: 14px 0 8px;
+}
+
+.friends-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.friends-list-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast);
+}
+
+.friends-list-item:hover { background: var(--color-glass-hover); }
+
+.friends-list-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.friends-list-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.friends-list-username {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+.friends-btn {
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-family);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--transition-fast);
+}
+
+.friends-btn:hover:not(:disabled) {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.friends-btn:disabled { opacity: 0.55; cursor: default; }
+
+.friends-btn.primary {
+  background: linear-gradient(135deg, #6366f1, #7c3aed);
+  border: none;
+  color: white;
+}
+
+.friends-btn.primary:hover { background: linear-gradient(135deg, #818cf8, #8b5cf6); }
+
+.friends-btn.danger {
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #f87171;
+}
+
+.friends-btn.danger:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+}
+
+.friends-empty {
+  text-align: center;
+  padding: 20px;
+  color: var(--color-text-tertiary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* --- Not-friends banner (replaces message input) --- */
+.not-friends-banner {
+  padding: 16px 24px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  background: rgba(239, 68, 68, 0.08);
+  border-top: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+/* --- New Chat modal: empty state when user has no friends --- */
+.new-chat-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  padding: 28px 20px;
+  color: var(--color-text-tertiary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.new-chat-empty .friends-btn {
+  margin-top: 8px;
+}
+
+/* --- Group Chat --- */
+
+/* Group avatar — different gradient so groups are visually distinct */
+.avatar.group-avatar {
+  background: linear-gradient(135deg, #0ea5e9, #6366f1);
+}
+
+/* Small "Group" tag next to the conversation name */
+.group-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #93c5fd;
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: var(--radius-full);
+  vertical-align: middle;
+}
+
+/* Gear button in the group chat header */
+.group-settings-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.group-settings-btn:hover {
+  color: var(--color-text-primary);
+  background: var(--color-glass-hover);
+}
+
+/* Group modals (create + settings) */
+.group-modal-body {
+  padding: 16px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+}
+
+.group-modal-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  margin-top: 4px;
+}
+
+.group-friend-list {
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.group-member-checkbox {
+  accent-color: #6366f1;
+  width: 15px;
+  height: 15px;
+  pointer-events: none;
+}
+
+.user-list-item.selected {
+  background: var(--color-accent-light);
+}
+
+.group-rename-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.group-rename-row .form-input { flex: 1; }
+
+.group-name-readonly {
+  font-size: 14px;
+  color: var(--color-text-primary);
+  padding: 6px 0;
+}
+
+.admin-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #4ade80;
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: var(--radius-full);
+  vertical-align: middle;
+}
+
+/* Two side-by-side buttons in the new-chat section */
+.new-chat-section .new-chat-btn { flex: 1; }
+
+.new-chat-btn.group {
+  background: linear-gradient(135deg, #0ea5e9, #6366f1);
+}
+
+.new-chat-btn.group:hover {
+  background: linear-gradient(135deg, #38bdf8, #818cf8);
+}

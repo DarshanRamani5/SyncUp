@@ -1,33 +1,38 @@
-import { useEffect, useRef, useState, useLayoutEffect } from 'react'
+import { useState, useEffect, useRef, useLayoutEffect } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useChat } from '../context/ChatContext.jsx'
 import MessageBubble from './MessageBubble.jsx'
 import MessageInput from './MessageInput.jsx'
+import GroupSettingsModal from './GroupSettingsModal.jsx'
+import api from '../lib/api.js'
 
 /**
  * ChatArea
- * 
- * The main chat panel — right side of the layout.
+ *
  * Displays either:
  * - Empty state (no conversation selected)
  * - Chat header + message list + input (conversation active)
- * 
+ *
  * Features:
  * - Auto-scrolls to bottom on new messages
  * - Shows loading state while fetching messages
  * - Date separators between messages from different days
  * - Renders MessageBubble for each message (sent vs received)
+ * - Selection mode for bulk delete-for-me
+ * - GROUP CHAT: group header (name + member count), settings panel,
+ *   sender names in bubbles (via MessageBubble), no online dot for groups
+ * - Friends-only: 1-1 input is replaced by a banner if you're unfriended
  */
 const ChatArea = () => {
   const { user } = useAuth()
-  const { 
-    activeConversation, 
+  const {
+    activeConversation,
     setActiveConversation,
-    messages, 
-    loadingMessages, 
-    sendMessage, 
+    messages,
+    loadingMessages,
+    sendMessage,
     uploadImage,
-    hasMoreMessages, 
+    hasMoreMessages,
     loadMoreMessages,
     typingUsers,
     sendTyping,
@@ -47,6 +52,8 @@ const ChatArea = () => {
   const [unreadSeparatorId, setUnreadSeparatorId] = useState(null)
   const [selectedMessages, setSelectedMessages] = useState(new Set())
   const [isSelectMode, setIsSelectMode] = useState(false)
+  const [isFriendBlocked, setIsFriendBlocked] = useState(false)
+  const [showGroupSettings, setShowGroupSettings] = useState(false)
 
   // Toggle selection for a message
   const toggleMessageSelection = (messageId) => {
@@ -67,15 +74,37 @@ const ChatArea = () => {
     }
   }
 
-  // Reset FAB and unread separator when switching conversations
+  // Reset FAB, unread separator, selection, and settings when switching conversations
   useEffect(() => {
     setShowScrollFab(false)
     setUnreadSeparatorId(null)
     setSelectedMessages(new Set())
     setIsSelectMode(false)
+    setShowGroupSettings(false)
     initialScrollRef.current = false
     isPaginatingRef.current = false
   }, [activeConversation])
+
+  // Check friendship for the active 1-1 conversation.
+  // If the other user was removed from friends, hide the input and
+  // show a banner. (The server enforces this too — this is just UX.)
+  // Group conversations skip this entirely — membership governs groups.
+  useEffect(() => {
+    const checkFriendship = async () => {
+      setIsFriendBlocked(false)
+      if (!activeConversation || activeConversation.isGroup) return
+      const other = activeConversation.users?.find(p => p.user.id !== user?.id)
+      if (!other) return
+      try {
+        const res = await api.get('/friends')
+        const stillFriends = res.data.friends.some(f => f.id === other.user.id)
+        setIsFriendBlocked(!stillFriends)
+      } catch (error) {
+        console.error('Friendship check failed:', error)
+      }
+    }
+    checkFriendship()
+  }, [activeConversation, user])
 
   // Restore scroll position after pagination (loading older messages)
   useLayoutEffect(() => {
@@ -90,7 +119,6 @@ const ChatArea = () => {
 
   // Single source of truth for whether the "Scroll to latest" FAB should show:
   // true only when the user is meaningfully scrolled up from the bottom.
-  // Used by both the scroll handler and the post-render sync effect below.
   const isScrolledUpFromBottom = () => {
     const container = messagesContainerRef.current
     if (!container) return false
@@ -98,10 +126,7 @@ const ChatArea = () => {
   }
 
   // Keep the FAB in sync after layout-changing renders (new message, an image
-  // finishing load, etc.). Without this the flag only updates on manual scroll,
-  // so a layout shift could leave it stuck visible at the wrong time.
-  // We don't override the intentional "unread separator" case, which sets the
-  // FAB on purpose during the initial jump to the first unread message.
+  // finishing load, etc.)
   useEffect(() => {
     if (messages.length === 0) {
       setShowScrollFab(false)
@@ -123,16 +148,19 @@ const ChatArea = () => {
     if (unreadMsgs.length > 0 && !unreadSeparatorId) {
       const firstUnreadId = unreadMsgs[0].id
       setUnreadSeparatorId(firstUnreadId)
-      
+
       // Scroll to the unread separator instead of bottom
       setTimeout(() => {
         if (unreadSeparatorRef.current) {
           unreadSeparatorRef.current.scrollIntoView({ behavior: 'auto', block: 'center' })
-          setShowScrollFab(true) 
+          // Only show the FAB if there's genuinely more content below the
+          // viewport. With few unread messages the separator jump already
+          // lands at the bottom — showing "Scroll to latest" there is wrong.
+          setShowScrollFab(isScrolledUpFromBottom())
           initialScrollRef.current = true
         }
       }, 100)
-    } 
+    }
     // Otherwise, if we are at the bottom (showScrollFab is false) and there's no initial unread jump happening
     else if (!showScrollFab && messagesEndRef.current) {
       // Only scroll to bottom if we are not just initializing an unread jump
@@ -198,10 +226,10 @@ const ChatArea = () => {
 
     if (date.toDateString() === today.toDateString()) return 'Today'
     if (date.toDateString() === yesterday.toDateString()) return 'Yesterday'
-    return date.toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric', 
-      year: 'numeric' 
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
     })
   }
 
@@ -254,47 +282,55 @@ const ChatArea = () => {
     )
   }
 
-  const otherUser = getOtherUser(activeConversation)
+  const isGroup = !!activeConversation.isGroup
+  const otherUser = isGroup ? null : getOtherUser(activeConversation)
+  const memberCount = activeConversation.users?.length || 0
 
-  // Whether the other participant is currently online. Used as a proxy for
-  // "delivered" on the sender's ticks: if they're online, an unread message of
-  // ours is assumed to have reached their device (grey ✓✓) rather than just sent (✓).
+  // Whether the other participant is currently online (1-1 only).
+  // Used as a proxy for "delivered" on the sender's ticks. For groups this
+  // is false — per-message ticks fall back to "sent".
   const recipientOnline = otherUser ? onlineUsers.has(otherUser.id) : false
 
   return (
     <div className="chat-area">
       {!isConnected && <div className="connection-banner">Disconnected. Trying to reconnect...</div>}
-      
+
       {/* Chat Header */}
       <div className="chat-header">
         <div className="chat-header-left">
           <button className="mobile-back-btn" onClick={() => setActiveConversation(null)}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
           </button>
-          <div className="avatar">
-            {getInitials(otherUser?.name)}
-            <span className={`avatar-status ${otherUser && onlineUsers.has(otherUser.id) ? 'online' : ''}`}></span>
+          <div className={`avatar ${isGroup ? 'group-avatar' : ''}`}>
+            {getInitials(isGroup ? (activeConversation.name || 'Group') : otherUser?.name)}
+            {!isGroup && (
+              <span className={`avatar-status ${otherUser && onlineUsers.has(otherUser.id) ? 'online' : ''}`}></span>
+            )}
           </div>
         </div>
         <div className="chat-header-info" style={{ flex: 1 }}>
-          <h2>{otherUser?.name || 'Unknown User'}</h2>
-          <p>{otherUser && onlineUsers.has(otherUser.id) ? 'Online' : 'Offline'}</p>
+          <h2>{isGroup ? (activeConversation.name || 'Group') : (otherUser?.name || 'Unknown User')}</h2>
+          <p>
+            {isGroup
+              ? `${memberCount} member${memberCount === 1 ? '' : 's'}`
+              : (otherUser && onlineUsers.has(otherUser.id) ? 'Online' : 'Offline')}
+          </p>
         </div>
-        
-        {/* Selection / Delete Actions */}
+
+        {/* Selection / Delete / Group Settings Actions */}
         <div className="chat-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {selectedMessages.size > 0 && (
             <>
               <span style={{ fontSize: '14px', color: 'var(--color-text-secondary)', marginRight: '8px' }}>
                 {selectedMessages.size} selected
               </span>
-              <button 
-                className="icon-btn" 
+              <button
+                className="icon-btn"
                 title="Delete Selected Messages"
-                style={{ 
-                  background: 'rgba(239, 68, 68, 0.1)', 
-                  border: 'none', 
-                  color: '#ef4444', 
+                style={{
+                  background: 'rgba(239, 68, 68, 0.1)',
+                  border: 'none',
+                  color: '#ef4444',
                   cursor: 'pointer',
                   padding: '6px 12px',
                   borderRadius: '4px',
@@ -309,7 +345,7 @@ const ChatArea = () => {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                 Delete Selected
               </button>
-              <button 
+              <button
                 onClick={() => {
                   setSelectedMessages(new Set())
                   setIsSelectMode(false)
@@ -328,13 +364,28 @@ const ChatArea = () => {
             </>
           )}
 
-          <button 
-            className="icon-btn" 
+          {/* Group settings (gear) — groups only */}
+          {isGroup && (
+            <button
+              className="group-settings-btn"
+              onClick={() => setShowGroupSettings(true)}
+              title="Group settings"
+              id="group-settings-btn"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+              </svg>
+            </button>
+          )}
+
+          <button
+            className="icon-btn"
             title={isSelectMode ? "Select Mode Active" : "Select Messages"}
-            style={{ 
-              background: isSelectMode ? 'rgba(255,255,255,0.1)' : 'transparent', 
-              border: 'none', 
-              color: isSelectMode ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)', 
+            style={{
+              background: isSelectMode ? 'rgba(255,255,255,0.1)' : 'transparent',
+              border: 'none',
+              color: isSelectMode ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
               cursor: 'pointer',
               padding: '8px',
               borderRadius: '50%'
@@ -352,13 +403,13 @@ const ChatArea = () => {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"></polyline><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
           </button>
 
-          <button 
-            className="icon-btn" 
+          <button
+            className="icon-btn"
             title="Delete Chat History"
-            style={{ 
-              background: 'transparent', 
-              border: 'none', 
-              color: 'var(--color-text-tertiary)', 
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--color-text-tertiary)',
               cursor: 'pointer',
               padding: '8px',
               borderRadius: '50%'
@@ -383,8 +434,8 @@ const ChatArea = () => {
       </div>
 
       {/* Messages */}
-      <div 
-        className="chat-messages" 
+      <div
+        className="chat-messages"
         ref={messagesContainerRef}
         onScroll={handleScroll}
       >
@@ -397,11 +448,11 @@ const ChatArea = () => {
 
         {/* Loading state for initial fetch */}
         {loadingMessages && messages.length === 0 && (
-          <div style={{ 
-            flex: 1, 
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'center' 
+          <div style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
           }}>
             <div className="loading-spinner lg"></div>
           </div>
@@ -409,11 +460,11 @@ const ChatArea = () => {
 
         {/* No messages yet */}
         {!loadingMessages && messages.length === 0 && (
-          <div style={{ 
-            flex: 1, 
-            display: 'flex', 
+          <div style={{
+            flex: 1,
+            display: 'flex',
             flexDirection: 'column',
-            alignItems: 'center', 
+            alignItems: 'center',
             justifyContent: 'center',
             gap: '8px',
             color: 'var(--color-text-tertiary)'
@@ -425,7 +476,7 @@ const ChatArea = () => {
 
         {/* Message list with date separators and unread separator */}
         {messages.map((msg, index) => {
-          const showDateSeparator = index === 0 || 
+          const showDateSeparator = index === 0 ||
             isDifferentDay(messages[index - 1].createdAt, msg.createdAt)
           const showUnreadSeparator = msg.id === unreadSeparatorId
           const isMsgSelected = selectedMessages.has(msg.id)
@@ -442,7 +493,7 @@ const ChatArea = () => {
                   <span>Unread messages</span>
                 </div>
               )}
-              <div 
+              <div
                 className={`message-select-row ${isSelectMode ? 'selecting' : ''} ${isMsgSelected ? 'selected' : ''}`}
                 onClick={() => isSelectMode && !msg.isDeleted && toggleMessageSelection(msg.id)}
               >
@@ -482,8 +533,22 @@ const ChatArea = () => {
         </button>
       )}
 
-      {/* Message Input */}
-      <MessageInput onSend={sendMessage} onTyping={sendTyping} onUploadImage={uploadImage} />
+      {/* Message Input — replaced by a banner if you're no longer friends (1-1 only) */}
+      {isFriendBlocked ? (
+        <div className="not-friends-banner" id="not-friends-banner">
+          You are no longer friends with this user. Send them a friend request to chat again.
+        </div>
+      ) : (
+        <MessageInput onSend={sendMessage} onTyping={sendTyping} onUploadImage={uploadImage} />
+      )}
+
+      {/* Group Settings Modal */}
+      {isGroup && showGroupSettings && (
+        <GroupSettingsModal
+          conversation={activeConversation}
+          onClose={() => setShowGroupSettings(false)}
+        />
+      )}
     </div>
   )
 }

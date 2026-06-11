@@ -1,5 +1,6 @@
 import prisma from '../lib/prisma.js'
 import { deleteImage } from '../config/cloudinary.js'
+import { areFriends } from '../lib/friendship.js'
 
 /**
  * Conversation Controller
@@ -57,6 +58,13 @@ const create = async (req, res) => {
       })
     }
 
+    // --- Friends-only: you can only start a 1-1 chat with a friend ---
+    if (!(await areFriends(currentUserId, participantId))) {
+      return res.status(403).json({
+        status: 403,
+        message: 'You can only start a chat with someone on your friends list. Send them a friend request first.'
+      })
+    }
     // --- Check for existing 1-1 conversation ---
     // We look for a conversation where:
     // 1. It's NOT a group (isGroup = false)
@@ -77,8 +85,10 @@ const create = async (req, res) => {
               select: {
                 id: true,
                 name: true,
+                username: true,
                 email: true,
-                avatarUrl: true
+                avatarUrl: true,
+                color: true
               }
             }
           }
