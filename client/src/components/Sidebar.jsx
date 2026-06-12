@@ -3,21 +3,17 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useChat } from '../context/ChatContext.jsx'
 import NewGroupModal from './NewGroupModal.jsx'
+import { getSocket } from '../lib/socket.js'
 import api from '../lib/api.js'
 
 /**
  * Sidebar
  *
  * Left panel of the chat layout. Shows:
- * - App logo + Friends / Logout buttons
+ * - App logo + Friends (with live request badge) / Logout buttons
  * - Search bar to filter conversations (matches names AND group names)
  * - Conversation list — 1-1 chats and GROUPS
  * - "New Chat" (friends only) and "New Group" buttons
- *
- * Group-aware display:
- * - Group rows show the group name and a 👥-style initials avatar
- * - Group previews are prefixed with the sender's name ("Alice: hi all")
- * - Online dot only shown for 1-1 chats (presence is per-user)
  */
 const Sidebar = () => {
   const { user, logout } = useAuth()
@@ -38,11 +34,47 @@ const Sidebar = () => {
   const [showNewGroup, setShowNewGroup] = useState(false)
   const [allUsers, setAllUsers] = useState([])
   const [loadingUsers, setLoadingUsers] = useState(false)
+  const [pendingRequests, setPendingRequests] = useState(0)
 
   // Fetch conversations on mount
   useEffect(() => {
     fetchConversations()
   }, [fetchConversations])
+
+  // --- Friend-request badge ---
+  // Loads the incoming pending count, then keeps it fresh via:
+  // 1. socket pushes ('friend-request-received' / 'friend-requests-updated')
+  // 2. window focus (covers any missed event while tab was inactive)
+  useEffect(() => {
+    let cancelled = false
+
+    const loadPendingCount = async () => {
+      try {
+        const res = await api.get('/friends/requests')
+        if (!cancelled) setPendingRequests(res.data.incoming.length)
+      } catch (error) {
+        console.error('Failed to load friend requests:', error)
+      }
+    }
+
+    loadPendingCount()
+
+    const socket = getSocket()
+    if (socket) {
+      socket.on('friend-request-received', loadPendingCount)
+      socket.on('friend-requests-updated', loadPendingCount)
+    }
+    window.addEventListener('focus', loadPendingCount)
+
+    return () => {
+      cancelled = true
+      if (socket) {
+        socket.off('friend-request-received', loadPendingCount)
+        socket.off('friend-requests-updated', loadPendingCount)
+      }
+      window.removeEventListener('focus', loadPendingCount)
+    }
+  }, [])
 
   /**
    * Get the "other" user in a 1-1 conversation
@@ -97,8 +129,7 @@ const Sidebar = () => {
   }
 
   /**
-   * Filter conversations by search query — matches the other participant's
-   * name for 1-1 chats and the group name for groups.
+   * Filter conversations by search query
    */
   const filteredConversations = conversations.filter(conv => {
     if (!searchQuery.trim()) return true
@@ -135,7 +166,6 @@ const Sidebar = () => {
 
   /**
    * Build the last-message preview line.
-   * Groups prefix the sender's first name; your own messages show "You:".
    */
   const getPreview = (conv) => {
     const lastMessage = conv.messages?.[0]
@@ -164,12 +194,17 @@ const Sidebar = () => {
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
             <button
-              className="sidebar-logout-btn"
+              className="sidebar-logout-btn friends-nav-btn"
               onClick={() => navigate('/friends')}
               id="friends-btn"
               title="Friends"
             >
               Friends
+              {pendingRequests > 0 && (
+                <span className="friends-nav-badge animate-scale-in">
+                  {pendingRequests > 9 ? '9+' : pendingRequests}
+                </span>
+              )}
             </button>
             <button
               className="sidebar-logout-btn"
@@ -240,7 +275,6 @@ const Sidebar = () => {
                 >
                   <div className={`avatar ${isGroup ? 'group-avatar' : ''}`}>
                     {getInitials(getConversationName(conv))}
-                    {/* Online dot only makes sense for 1-1 chats */}
                     {!isGroup && (
                       <span className={`avatar-status ${otherUser && onlineUsers.has(otherUser.id) ? 'online' : ''}`}></span>
                     )}

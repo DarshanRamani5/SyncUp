@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useChat } from '../context/ChatContext.jsx'
 import api from '../lib/api.js'
+import { getSocket } from '../lib/socket.js'
 
 /**
  * FriendsPage
@@ -58,6 +59,19 @@ const FriendsPage = () => {
 
   useEffect(() => {
     loadData()
+  }, [loadData])
+
+  // Live refresh: when a request arrives / is handled elsewhere,
+  // reload tabs so Requests and Friends stay current without refreshing.
+  useEffect(() => {
+    const socket = getSocket()
+    if (!socket) return
+    socket.on('friend-request-received', loadData)
+    socket.on('friend-requests-updated', loadData)
+    return () => {
+      socket.off('friend-request-received', loadData)
+      socket.off('friend-requests-updated', loadData)
+    }
   }, [loadData])
 
   /**

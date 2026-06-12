@@ -133,6 +133,13 @@ model Message {
   conversationId String       @db.Uuid
   Conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
+  // NEW: Reply threading (WhatsApp style) — self-relation.
+  // replyToId points at the quoted message. SetNull on delete so that if
+  // the original is ever hard-deleted, replies survive with a null quote.
+  replyToId String?
+  replyTo   Message?  @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies   Message[] @relation("MessageReplies")
+
   isEdited  Boolean? @default(false)
   isDeleted Boolean  @default(false)
   createdAt DateTime @default(now())

@@ -288,6 +288,27 @@ export const ChatProvider = ({ children }) => {
         })
       }
     }
+    // --- Group real-time updates (rename / add / remove / leave) ---
+    const handleGroupUpdated = ({ conversation }) => {
+      // Refresh the sidebar list (also adds the group if I was just added)
+      fetchConversations()
+      // If I have this group open, patch it in place (name, members, admins)
+      setActiveConversation(prev =>
+        prev && prev.id === conversation.id ? { ...prev, ...conversation } : prev
+      )
+      // Make sure this socket is in the room so messages arrive live
+      socket.emit('join-conversation', conversation.id)
+    }
+
+    const handleRemovedFromGroup = ({ conversationId, name }) => {
+      socket.emit('leave-conversation', conversationId)
+      // If I'm looking at that group right now, close it
+      setActiveConversation(prev =>
+        prev && prev.id === conversationId ? null : prev
+      )
+      fetchConversations()
+      console.log(`You were removed from ${name}`)
+    }
 
     // Register all listeners
     socket.on('connect', handleConnect)
@@ -301,6 +322,8 @@ export const ChatProvider = ({ children }) => {
     socket.on('user-online', handleUserOnline)
     socket.on('user-offline', handleUserOffline)
     socket.on('user-typing', handleUserTyping)
+    socket.on('group-updated', handleGroupUpdated)
+    socket.on('removed-from-group', handleRemovedFromGroup)
 
     // Set initial connection state
     setIsConnected(socket.connected)
@@ -318,6 +341,8 @@ export const ChatProvider = ({ children }) => {
       socket.off('user-online', handleUserOnline)
       socket.off('user-offline', handleUserOffline)
       socket.off('user-typing', handleUserTyping)
+      socket.off('group-updated', handleGroupUpdated)
+      socket.off('removed-from-group', handleRemovedFromGroup)
     }
   }, [user, playNotificationSound]) // Re-run when user state changes (i.e. login/verify finishes)
 

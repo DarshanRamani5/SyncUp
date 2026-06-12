@@ -1,4 +1,5 @@
 import prisma from '../lib/prisma.js'
+import { getIO } from '../socket.js'
 
 /**
  * Group Controller
@@ -16,6 +17,12 @@ import prisma from '../lib/prisma.js'
  * - Admins cannot remove themselves (they leave instead).
  * - If the last admin leaves, the longest-standing remaining member is promoted.
  * - If the last member leaves, the group and its messages are deleted.
+ *
+ * REAL-TIME (NEW):
+ * Every mutation pushes a socket event to each affected user's personal
+ * room ("user:<id>"), so sidebars and open chats update instantly:
+ * - 'group-updated'       { conversation }            → current/new members
+ * - 'removed-from-group'  { conversationId, name }    → the removed member
  */
 
 // What we return for each participant. No emails — usernames only.
@@ -36,6 +43,25 @@ const GROUP_USERS_INCLUDE = {
 }
 
 /**
+ * Push a socket event to a list of users (each user's personal room).
+ * Never throws — real-time is best-effort; the REST response is the
+ * source of truth for the user who performed the action.
+ */
+const notifyUsers = (userIds, event, payload) => {
+  try {
+    const io = getIO()
+    if (!io) return
+    userIds.forEach(id => io.to(`user:${id}`).emit(event, payload))
+  } catch (err) {
+    console.error('notifyUsers error:', err.message)
+  }
+}
+
+/** Member ids from a conversation loaded with GROUP_USERS_INCLUDE */
+const memberIdsOf = (conversation) =>
+  (conversation?.users || []).map(u => u.userId)
+
+/**
  * Helper: the current user's friend ids (both relation directions, deduped).
  */
 const getFriendIds = async (userId) => {
@@ -52,7 +78,6 @@ const getFriendIds = async (userId) => {
 
 /**
  * Helper: load a group conversation and the requester's membership row.
- * Returns { error, status } on failure, or { conversation, membership }.
  */
 const loadGroupAndMembership = async (conversationId, userId) => {
   const conversation = await prisma.conversation.findUnique({
@@ -72,16 +97,11 @@ const loadGroupAndMembership = async (conversationId, userId) => {
 /**
  * POST /api/conversations/group
  * Body: { name: "Weekend Trip", memberIds: ["id1", "id2", ...] }
- *
- * Creates a group with the current user as admin.
- * Rules: name required; at least 2 other members (a group is 3+ people);
- * every member must be on the creator's friends list.
  */
 const createGroup = async (req, res) => {
   try {
     const creatorId = req.user.id
     const name = (req.body.name || '').trim()
-    // Dedupe and drop the creator if they included themselves
     const memberIds = [...new Set(req.body.memberIds || [])].filter(id => id !== creatorId)
 
     if (!name) {
@@ -94,7 +114,6 @@ const createGroup = async (req, res) => {
       return res.status(400).json({ status: 400, message: 'Select at least 2 friends — a group needs 3+ people' })
     }
 
-    // Every member must be the creator's friend
     const friendIds = await getFriendIds(creatorId)
     const nonFriends = memberIds.filter(id => !friendIds.has(id))
     if (nonFriends.length > 0) {
@@ -110,13 +129,16 @@ const createGroup = async (req, res) => {
         name,
         users: {
           create: [
-            { userId: creatorId, isAdmin: true },          // creator = admin
-            ...memberIds.map(id => ({ userId: id }))       // members
+            { userId: creatorId, isAdmin: true },
+            ...memberIds.map(id => ({ userId: id }))
           ]
         }
       },
       include: GROUP_USERS_INCLUDE
     })
+
+    // Tell the invited members instantly — their sidebar gains the group
+    notifyUsers(memberIds, 'group-updated', { conversation })
 
     return res.status(201).json({
       status: 201,
@@ -130,9 +152,7 @@ const createGroup = async (req, res) => {
 }
 
 /**
- * PUT /api/conversations/:id/group
- * Body: { name }
- * Rename the group — admin only.
+ * PUT /api/conversations/:id/group — rename (admin only)
  */
 const updateGroup = async (req, res) => {
   try {
@@ -161,6 +181,9 @@ const updateGroup = async (req, res) => {
       include: GROUP_USERS_INCLUDE
     })
 
+    // Everyone (including other tabs of the renamer) sees the new name live
+    notifyUsers(memberIdsOf(conversation), 'group-updated', { conversation })
+
     return res.status(200).json({ status: 200, message: 'Group renamed', conversation })
   } catch (error) {
     console.error('updateGroup error:', error)
@@ -169,9 +192,7 @@ const updateGroup = async (req, res) => {
 }
 
 /**
- * POST /api/conversations/:id/members
- * Body: { memberIds: [...] }
- * Add members — admin only; new members must be the admin's friends.
+ * POST /api/conversations/:id/members — add members (admin only)
  */
 const addMembers = async (req, res) => {
   try {
@@ -191,7 +212,6 @@ const addMembers = async (req, res) => {
       return res.status(403).json({ status: 403, message: 'Only group admins can add members' })
     }
 
-    // Must be friends of the admin doing the adding
     const friendIds = await getFriendIds(userId)
     if (memberIds.some(mid => !friendIds.has(mid))) {
       return res.status(403).json({
@@ -200,7 +220,6 @@ const addMembers = async (req, res) => {
       })
     }
 
-    // Skip anyone who's already in the group
     const existingIds = new Set(result.conversation.users.map(u => u.userId))
     const toAdd = memberIds.filter(mid => !existingIds.has(mid))
 
@@ -217,6 +236,10 @@ const addMembers = async (req, res) => {
       include: GROUP_USERS_INCLUDE
     })
 
+    // Existing members see the new member list; NEW members get the group
+    // appearing in their sidebar instantly
+    notifyUsers(memberIdsOf(conversation), 'group-updated', { conversation })
+
     return res.status(200).json({
       status: 200,
       message: `Added ${toAdd.length} member(s)`,
@@ -229,8 +252,7 @@ const addMembers = async (req, res) => {
 }
 
 /**
- * DELETE /api/conversations/:id/members/:userId
- * Remove a member — admin only. Admins leave (not remove) themselves.
+ * DELETE /api/conversations/:id/members/:userId — remove a member (admin only)
  */
 const removeMember = async (req, res) => {
   try {
@@ -264,6 +286,14 @@ const removeMember = async (req, res) => {
       include: GROUP_USERS_INCLUDE
     })
 
+    // The removed member's client closes the chat + drops it from the sidebar
+    notifyUsers([targetId], 'removed-from-group', {
+      conversationId: id,
+      name: conversation?.name || 'a group'
+    })
+    // Remaining members see the updated member list
+    notifyUsers(memberIdsOf(conversation), 'group-updated', { conversation })
+
     return res.status(200).json({ status: 200, message: 'Member removed', conversation })
   } catch (error) {
     console.error('removeMember error:', error)
@@ -273,11 +303,6 @@ const removeMember = async (req, res) => {
 
 /**
  * POST /api/conversations/:id/leave
- *
- * Leave the group. Special cases handled in order:
- * - Last member leaving → delete the whole group (messages cascade).
- * - Last ADMIN leaving  → promote one remaining member so the group
- *   is never left without an admin.
  */
 const leaveGroup = async (req, res) => {
   try {
@@ -293,8 +318,6 @@ const leaveGroup = async (req, res) => {
 
     // --- Last member: delete the group entirely ---
     if (remaining.length === 0) {
-      // Clear implicit many-to-many relations on messages first, then rely on
-      // the conversation cascade for the messages themselves.
       const messages = await prisma.message.findMany({
         where: { conversationId: id },
         select: { id: true }
@@ -334,6 +357,13 @@ const leaveGroup = async (req, res) => {
     }
 
     await prisma.$transaction(operations)
+
+    // Remaining members see the member list shrink (and a possible new admin)
+    const conversation = await prisma.conversation.findUnique({
+      where: { id },
+      include: GROUP_USERS_INCLUDE
+    })
+    notifyUsers(memberIdsOf(conversation), 'group-updated', { conversation })
 
     return res.status(200).json({ status: 200, message: 'You left the group' })
   } catch (error) {

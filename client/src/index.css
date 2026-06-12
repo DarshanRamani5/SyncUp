@@ -1751,3 +1751,24 @@ body {
 .new-chat-btn.group:hover {
   background: linear-gradient(135deg, #38bdf8, #818cf8);
 }
+/* --- Friend-request badge on the sidebar Friends button --- */
+.friends-nav-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.friends-nav-badge {
+  background: #ef4444;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+}

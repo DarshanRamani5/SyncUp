@@ -9,6 +9,7 @@ import prisma from './lib/prisma.js'
 import crypto from 'crypto'
 
 
+
 /**
  * Socket.IO Server Setup
  * 
@@ -46,6 +47,15 @@ import crypto from 'crypto'
  *    Fallback: If REDIS_URL is not set, uses a plain JavaScript Map
  *    (works fine for single-server development).
  */
+
+// ============================================================
+// IO INSTANCE EXPORT
+// ============================================================
+// Module-level reference to the Socket.IO server, so REST controllers
+// (group.controller, friend.controller) can push real-time events
+// without being part of the socket layer themselves.
+let ioInstance = null
+export const getIO = () => ioInstance
 
 // ============================================================
 // PRESENCE STORE — Redis-backed with in-memory fallback
@@ -169,6 +179,8 @@ const presenceStore = {
  * @param {Server} io — Socket.IO server instance
  */
 export const setupSocketServer = async (io) => {
+
+  ioInstance = io
   // --- Redis Adapter Setup ---
   // Creates two dedicated Redis connections for pub/sub
   const pubClient = createRedisClient()
@@ -243,6 +255,10 @@ export const setupSocketServer = async (io) => {
   // --- Connection Handler ---
   io.on('connection', async (socket) => {
     const userId = socket.user.id
+    // Personal room: every socket of this user joins "user:<id>".
+    // This lets the server target ONE user across all their tabs/devices —
+    // used for group updates and friend-request notifications.
+    socket.join(`user:${userId}`)
     console.log(`🔌 User connected: ${socket.user.name} (${userId}) — socket: ${socket.id}`)
 
     // --- Track online status via Redis (or in-memory fallback) ---

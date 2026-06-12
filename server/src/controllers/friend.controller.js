@@ -1,4 +1,5 @@
 import prisma from '../lib/prisma.js'
+import { getIO } from '../socket.js'
 
 /**
  * Friend Controller
@@ -10,10 +11,15 @@ import prisma from '../lib/prisma.js'
  * - cancelRequest:    DELETE /api/friends/requests/:id    — cancel my pending request (sender only)
  * - getFriends:       GET    /api/friends                 — my friends list
  * - unfriend:         DELETE /api/friends/:friendId       — remove a friend
+ *
+ * REAL-TIME (NEW):
+ * - 'friend-request-received' { from }  → receiver, when a request arrives
+ * - 'friend-requests-updated' {}        → the OTHER party after accept /
+ *                                         decline / cancel / unfriend,
+ *                                         so badges and lists refresh live
  */
 
 // Safe fields to return for any user in friend-related responses.
-// NEVER include email — friends find each other by @username.
 const PUBLIC_USER_SELECT = {
   id: true,
   name: true,
@@ -22,11 +28,17 @@ const PUBLIC_USER_SELECT = {
   color: true
 }
 
-/**
- * Helper: are these two users already friends?
- * We connect the relation BOTH ways on accept, so checking one side is enough,
- * but we check both to be safe against any older one-sided data.
- */
+/** Best-effort socket push to users' personal rooms */
+const notifyUsers = (userIds, event, payload = {}) => {
+  try {
+    const io = getIO()
+    if (!io) return
+    userIds.forEach(id => io.to(`user:${id}`).emit(event, payload))
+  } catch (err) {
+    console.error('notifyUsers error:', err.message)
+  }
+}
+
 const areFriends = async (userIdA, userIdB) => {
   const user = await prisma.user.findFirst({
     where: {
@@ -43,15 +55,6 @@ const areFriends = async (userIdA, userIdB) => {
 
 /**
  * POST /api/friends/requests
- * Body: { receiverId }
- *
- * Rules:
- * - Can't friend yourself
- * - Can't send if already friends
- * - If THEY already sent YOU a pending request → tell user to accept it instead
- * - If you already have a pending request to them → 409
- * - If an old request exists (declined, or accepted-then-unfriended) → reset it
- *   back to pending (this is why FriendRequest has @@unique([senderId, receiverId]))
  */
 const sendRequest = async (req, res) => {
   try {
@@ -66,7 +69,6 @@ const sendRequest = async (req, res) => {
       return res.status(400).json({ status: 400, message: "You can't send a friend request to yourself" })
     }
 
-    // Receiver must exist
     const receiver = await prisma.user.findUnique({
       where: { id: receiverId },
       select: PUBLIC_USER_SELECT
@@ -75,12 +77,10 @@ const sendRequest = async (req, res) => {
       return res.status(404).json({ status: 404, message: 'User not found' })
     }
 
-    // Already friends?
     if (await areFriends(senderId, receiverId)) {
       return res.status(409).json({ status: 409, message: 'You are already friends with this user' })
     }
 
-    // Did THEY already send ME a pending request? (reverse direction)
     const reverseRequest = await prisma.friendRequest.findUnique({
       where: {
         senderId_receiverId: { senderId: receiverId, receiverId: senderId }
@@ -93,7 +93,6 @@ const sendRequest = async (req, res) => {
       })
     }
 
-    // My own previous request to them (if any)
     const existingRequest = await prisma.friendRequest.findUnique({
       where: {
         senderId_receiverId: { senderId, receiverId }
@@ -106,7 +105,6 @@ const sendRequest = async (req, res) => {
       if (existingRequest.status === 'pending') {
         return res.status(409).json({ status: 409, message: 'Friend request already sent' })
       }
-      // declined (or stale accepted after an unfriend) → reset to pending
       request = await prisma.friendRequest.update({
         where: { id: existingRequest.id },
         data: { status: 'pending' },
@@ -118,6 +116,11 @@ const sendRequest = async (req, res) => {
         include: { receiver: { select: PUBLIC_USER_SELECT } }
       })
     }
+
+    // Live notification → receiver's badge updates instantly
+    notifyUsers([receiverId], 'friend-request-received', {
+      from: { id: senderId, name: req.user.name, username: req.user.username }
+    })
 
     return res.status(201).json({
       status: 201,
@@ -132,10 +135,6 @@ const sendRequest = async (req, res) => {
 
 /**
  * GET /api/friends/requests
- *
- * Returns BOTH directions of pending requests:
- * - incoming: requests sent TO me (I can accept/decline)
- * - outgoing: requests sent BY me (I can cancel)
  */
 const getRequests = async (req, res) => {
   try {
@@ -163,14 +162,6 @@ const getRequests = async (req, res) => {
 
 /**
  * PUT /api/friends/requests/:id
- * Body: { action: 'accept' | 'decline' }
- *
- * Only the RECEIVER of a pending request can respond to it.
- * On accept, we do THREE writes in one transaction (all-or-nothing):
- *   1. mark the request accepted
- *   2. connect sender → receiver in the Friends relation
- *   3. connect receiver → sender in the Friends relation
- * Connecting both directions makes "who are my friends" queries trivial.
  */
 const respondToRequest = async (req, res) => {
   try {
@@ -191,7 +182,6 @@ const respondToRequest = async (req, res) => {
       return res.status(404).json({ status: 404, message: 'Friend request not found' })
     }
 
-    // Only the receiver can accept/decline
     if (request.receiverId !== userId) {
       return res.status(403).json({ status: 403, message: 'This request was not sent to you' })
     }
@@ -205,6 +195,8 @@ const respondToRequest = async (req, res) => {
         where: { id: requestId },
         data: { status: 'declined' }
       })
+      // Sender's "Sent by you" list refreshes (their pending item is gone)
+      notifyUsers([request.senderId], 'friend-requests-updated')
       return res.status(200).json({ status: 200, message: 'Friend request declined' })
     }
 
@@ -224,6 +216,9 @@ const respondToRequest = async (req, res) => {
       })
     ])
 
+    // Sender instantly sees the new friend / cleared outgoing request
+    notifyUsers([request.senderId], 'friend-requests-updated')
+
     return res.status(200).json({
       status: 200,
       message: `You are now friends with @${request.sender.username}`,
@@ -237,8 +232,6 @@ const respondToRequest = async (req, res) => {
 
 /**
  * DELETE /api/friends/requests/:id
- *
- * Cancel a pending request you sent. Sender only.
  */
 const cancelRequest = async (req, res) => {
   try {
@@ -261,6 +254,9 @@ const cancelRequest = async (req, res) => {
 
     await prisma.friendRequest.delete({ where: { id: requestId } })
 
+    // Receiver's badge count drops instantly
+    notifyUsers([request.receiverId], 'friend-requests-updated')
+
     return res.status(200).json({ status: 200, message: 'Friend request cancelled' })
   } catch (error) {
     console.error('cancelRequest error:', error)
@@ -270,10 +266,6 @@ const cancelRequest = async (req, res) => {
 
 /**
  * GET /api/friends
- *
- * Returns the current user's friends list.
- * We read both sides of the self-relation and merge + dedupe,
- * which keeps this correct even if some old data is one-sided.
  */
 const getFriends = async (req, res) => {
   try {
@@ -289,7 +281,6 @@ const getFriends = async (req, res) => {
       return res.status(404).json({ status: 404, message: 'User not found' })
     }
 
-    // Merge both directions, dedupe by id
     const map = new Map()
     for (const f of [...me.friendsWith, ...me.friendOf]) {
       map.set(f.id, f)
@@ -307,10 +298,6 @@ const getFriends = async (req, res) => {
 
 /**
  * DELETE /api/friends/:friendId
- *
- * Unfriend: disconnect BOTH directions of the relation, and delete any
- * FriendRequest rows between the pair so a future re-add starts clean
- * (important because of the @@unique([senderId, receiverId]) constraint).
  */
 const unfriend = async (req, res) => {
   try {
@@ -345,6 +332,9 @@ const unfriend = async (req, res) => {
         }
       })
     ])
+
+    // The other person's friends list / open chat refreshes
+    notifyUsers([friendId], 'friend-requests-updated')
 
     return res.status(200).json({ status: 200, message: 'Friend removed' })
   } catch (error) {
