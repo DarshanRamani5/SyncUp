@@ -18,16 +18,19 @@ model User {
   name         String? @db.VarChar(200)
   email        String  @unique
 
-  // NEW: Unique public handle (Discord/Telegram style, e.g. "harsh_dev")
+  // Unique public handle (Discord/Telegram style, e.g. "darshan_dev")
   // - Optional (String?) at the DB level so existing rows don't break the
   //   migration, but REQUIRED at registration time (enforced in the controller).
-  // - Always stored lowercase so "Harsh_Dev" and "harsh_dev" can't both exist.
+  // - Always stored lowercase so "Darshan_Dev" and "darshan_dev" can't both exist.
   // - This is what users share publicly instead of their email.
   username     String? @unique @db.VarChar(32)
 
   passwordHash String
   avatarUrl    String?
   color        String? @db.VarChar(8)
+
+  // Whether the user has verified their email via OTP
+  emailVerified Boolean @default(false)
 
   // Friends system — self-referencing many-to-many
   // A user can be on either side of a friendship
@@ -73,7 +76,7 @@ model FriendRequest {
   createdAt  DateTime            @default(now())
   updatedAt  DateTime            @updatedAt
 
-  // NEW: a user can only have ONE request row per receiver.
+  // A user can only have ONE request row per receiver.
   // Prevents spamming someone with 50 pending requests.
   @@unique([senderId, receiverId])
 }
@@ -82,7 +85,7 @@ model FriendRequest {
 // Conversation ↔ User Join Table
 // =========================================
 // Composite primary key (userId + conversationId).
-// isAdmin: NEW — group admin flag. The group creator becomes admin;
+// isAdmin: group admin flag. The group creator becomes admin;
 // only admins can rename the group, add members, or remove members.
 model ConversationsOnUsers {
   user           User         @relation(fields: [userId], references: [id])
@@ -133,7 +136,7 @@ model Message {
   conversationId String       @db.Uuid
   Conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
-  // NEW: Reply threading (WhatsApp style) — self-relation.
+  // Reply threading (WhatsApp style) — self-relation.
   // replyToId points at the quoted message. SetNull on delete so that if
   // the original is ever hard-deleted, replies survive with a null quote.
   replyToId String?
@@ -149,12 +152,17 @@ model Message {
 }
 
 // =========================================
-// Verification Token (for email verification / password reset)
+// OTP Verification Token (for email verification / password reset)
 // =========================================
+// One active token per email per type. The `otp` field holds the 6-digit code
+// (hashed with bcrypt). `attempts` tracks wrong guesses to prevent brute-force.
 model VerificationToken {
-  identifier String
-  token      String
+  identifier String              // email address
+  type       String              // "email_verification" | "password_reset"
+  otp        String              // bcrypt-hashed 6-digit OTP
   expires    DateTime
+  attempts   Int      @default(0) // wrong-guess counter (lock after 5)
+  createdAt  DateTime @default(now())
 
-  @@id([identifier, token])
+  @@id([identifier, type])
 }

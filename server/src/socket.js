@@ -495,11 +495,17 @@ export const setupSocketServer = async (io) => {
 
           let pending = await connectSeen(realMessageIds)
 
-          // Retry the stragglers a couple of times, giving the Kafka consumer
-          // time to persist them. Short and bounded — not an infinite loop.
-          for (let attempt = 0; attempt < 2 && pending.length > 0; attempt++) {
-            await new Promise(resolve => setTimeout(resolve, 600))
+          // Retry the stragglers, giving the Kafka consumer time to persist
+          // them. The consumer typically takes 70-400ms, but under load or
+          // cold-start there can be extra lag. 5 retries × 800ms = 4s max
+          // wait — bounded and safe, not an infinite loop.
+          for (let attempt = 0; attempt < 5 && pending.length > 0; attempt++) {
+            await new Promise(resolve => setTimeout(resolve, 800))
             pending = await connectSeen(pending)
+          }
+
+          if (pending.length > 0) {
+            console.warn(`⚠️  mark-messages-read: ${pending.length} message(s) still not in DB after retries (Kafka lag)`)
           }
         }
         // Broadcast to room so the sender sees the blue double-tick

@@ -451,6 +451,433 @@ body {
   color: var(--color-accent-hover);
 }
 
+/* Auth link button (unstyled button that looks like a link) */
+.auth-link-btn {
+  background: none;
+  border: none;
+  color: var(--color-text-accent);
+  font-size: 14px;
+  font-weight: 500;
+  font-family: var(--font-family);
+  cursor: pointer;
+  transition: color var(--transition-fast);
+  padding: 0;
+}
+
+.auth-link-btn:hover {
+  color: var(--color-accent-hover);
+}
+
+/* Wider auth card for registration form */
+.auth-card.auth-card-wide {
+  max-width: 480px;
+}
+
+/* ---- Form Row (side-by-side fields) ---- */
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+/* ---- Username input with @ prefix ---- */
+.username-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.username-at {
+  position: absolute;
+  left: 14px;
+  color: var(--color-text-tertiary);
+  font-size: 14px;
+  font-weight: 500;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.username-input {
+  padding-left: 32px !important;
+}
+
+/* ---- Form hint text ---- */
+.form-hint {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  line-height: 1.3;
+}
+
+.form-hint-row {
+  margin-top: -10px;
+}
+
+/* ---- Password input with toggle ---- */
+.password-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-input-wrapper .form-input {
+  padding-right: 44px;
+}
+
+.password-toggle-btn {
+  position: absolute;
+  right: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  transition: background var(--transition-fast);
+  line-height: 1;
+}
+
+.password-toggle-btn:hover {
+  background: var(--color-glass-hover);
+}
+
+/* ---- Form label row (label + link side by side) ---- */
+.form-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.form-label-row .form-label {
+  margin: 0;
+}
+
+.forgot-password-link {
+  font-size: 12px;
+  color: var(--color-text-accent);
+  text-decoration: none;
+  font-weight: 500;
+  transition: color var(--transition-fast);
+}
+
+.forgot-password-link:hover {
+  color: var(--color-accent-hover);
+}
+
+/* ---- Input validation states ---- */
+.form-input.input-valid {
+  border-color: var(--color-success);
+}
+
+.form-input.input-valid:focus {
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.15);
+}
+
+.form-input.input-invalid {
+  border-color: var(--color-error);
+}
+
+.form-input.input-invalid:focus {
+  box-shadow: 0 0 0 3px var(--color-error-bg);
+}
+
+/* ---- Field status indicator ---- */
+.field-status {
+  font-size: 11px;
+  margin-top: 3px;
+  display: block;
+  transition: color var(--transition-fast);
+}
+
+.field-status.valid {
+  color: var(--color-success);
+}
+
+.field-status.invalid {
+  color: var(--color-error);
+}
+
+/* ========================================
+   OTP Input
+   ======================================== */
+.otp-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.otp-input-group {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.otp-digit {
+  width: 48px;
+  height: 56px;
+  text-align: center;
+  font-size: 24px;
+  font-weight: 700;
+  font-family: 'Courier New', monospace;
+  color: var(--color-text-primary);
+  background: var(--color-bg-tertiary);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: all var(--transition-fast);
+  caret-color: var(--color-accent);
+}
+
+.otp-digit:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-light);
+  background: var(--color-bg-elevated);
+}
+
+.otp-digit.filled {
+  border-color: var(--color-accent);
+  background: var(--color-accent-light);
+  color: var(--color-text-primary);
+}
+
+.otp-digit.otp-error {
+  border-color: var(--color-error);
+}
+
+.otp-digit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.otp-error-text {
+  font-size: 12px;
+  color: var(--color-error);
+  text-align: center;
+}
+
+.otp-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  margin-top: 8px;
+}
+
+.otp-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.otp-resend {
+  text-align: center;
+}
+
+.otp-resend-btn {
+  background: none;
+  border: none;
+  color: var(--color-text-accent);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--font-family);
+  cursor: pointer;
+  transition: color var(--transition-fast);
+  padding: 0;
+}
+
+.otp-resend-btn:hover {
+  color: var(--color-accent-hover);
+  text-decoration: underline;
+}
+
+.otp-resend-timer {
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+}
+
+/* ========================================
+   Password Strength Meter
+   ======================================== */
+.password-strength {
+  margin-top: 8px;
+  animation: fadeIn var(--transition-fast) ease-out;
+}
+
+.strength-bar-container {
+  width: 100%;
+  height: 4px;
+  background: var(--color-bg-tertiary);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.strength-bar-fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  transition: width 300ms ease-out, background 300ms ease-out;
+}
+
+.strength-label {
+  font-size: 11px;
+  font-weight: 600;
+  margin-top: 4px;
+  text-align: right;
+  transition: color 300ms ease-out;
+}
+
+.strength-checks {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 12px;
+  margin-top: 8px;
+}
+
+.strength-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  transition: color var(--transition-fast);
+}
+
+.strength-check.pass {
+  color: var(--color-success);
+}
+
+.strength-check.fail {
+  color: var(--color-text-tertiary);
+}
+
+.strength-check-icon {
+  font-size: 11px;
+  font-weight: 700;
+  width: 14px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.strength-check-label {
+  line-height: 1.4;
+}
+
+/* ========================================
+   Auth Step Indicator (Forgot Password)
+   ======================================== */
+.auth-steps {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  margin-bottom: 28px;
+}
+
+.auth-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+}
+
+.auth-step:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 14px;
+  left: calc(50% + 18px);
+  width: 28px;
+  height: 2px;
+  background: var(--color-border);
+  transition: background var(--transition-base);
+}
+
+.auth-step.completed:not(:last-child)::after {
+  background: var(--color-success);
+}
+
+.auth-step-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  border: 2px solid var(--color-border);
+  color: var(--color-text-tertiary);
+  background: var(--color-bg-tertiary);
+  transition: all var(--transition-base);
+}
+
+.auth-step.active .auth-step-dot {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  background: var(--color-accent-light);
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
+}
+
+.auth-step.completed .auth-step-dot {
+  border-color: var(--color-success);
+  color: white;
+  background: var(--color-success);
+}
+
+.auth-step-label {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  font-weight: 500;
+  transition: color var(--transition-base);
+}
+
+.auth-step.active .auth-step-label {
+  color: var(--color-text-primary);
+}
+
+.auth-step.completed .auth-step-label {
+  color: var(--color-success);
+}
+
+/* ========================================
+   Auth Success Screen
+   ======================================== */
+.auth-success-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+}
+
+.auth-success-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--color-success-bg);
+  border: 2px solid var(--color-success);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  color: var(--color-success);
+  margin-bottom: 8px;
+  animation: scaleIn var(--transition-base) ease-out;
+}
+
+.auth-success-section .auth-title {
+  margin-bottom: 0;
+}
+
+.auth-success-section .auth-subtitle {
+  margin-bottom: 20px;
+}
+
+.auth-success-section .auth-btn {
+  max-width: 200px;
+}
+
 /* ========================================
    Chat Layout
    ======================================== */

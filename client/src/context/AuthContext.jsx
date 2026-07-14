@@ -12,6 +12,14 @@ import { connectSocket, disconnectSocket } from '../lib/socket.js'
  *
  * On app load (mount), we check localStorage for a saved token.
  * If found, we call GET /api/auth/me to verify it's still valid.
+ *
+ * Auth flow:
+ * - register() → sends form data, triggers OTP email (no JWT yet)
+ * - verifyEmail() → verifies OTP, receives JWT, auto-logs in
+ * - login() → standard email/password login
+ * - forgotPassword() → triggers password reset OTP
+ * - verifyResetOtp() → verifies reset OTP, returns resetToken
+ * - resetPassword() → sets new password using resetToken
  */
 
 const AuthContext = createContext(null)
@@ -61,13 +69,25 @@ export const AuthProvider = ({ children }) => {
   }, [])
 
   /**
-   * Register a new user
+   * Register a new user (Step 1)
    * POST /api/auth/register with { name, username, email, password }
    *
-   * CHANGED: now also sends the username chosen on the signup form.
+   * Does NOT auto-login — returns the API response so the UI can
+   * move to the OTP verification step.
    */
   const register = useCallback(async (name, username, email, password) => {
     const res = await api.post('/auth/register', { name, username, email, password })
+    return res.data
+  }, [])
+
+  /**
+   * Verify email OTP (Step 2 of registration)
+   * POST /api/auth/verify-email with { email, otp }
+   *
+   * On success: receives JWT + user → auto-logs in
+   */
+  const verifyEmail = useCallback(async (email, otp) => {
+    const res = await api.post('/auth/verify-email', { email, otp })
     const { user: userData, token: newToken } = res.data
 
     localStorage.setItem('syncup_token', newToken)
@@ -76,6 +96,15 @@ export const AuthProvider = ({ children }) => {
 
     connectSocket(newToken)
 
+    return res.data
+  }, [])
+
+  /**
+   * Resend OTP
+   * POST /api/auth/resend-otp with { email, type }
+   */
+  const resendOtp = useCallback(async (email, type) => {
+    const res = await api.post('/auth/resend-otp', { email, type })
     return res.data
   }, [])
 
@@ -98,6 +127,33 @@ export const AuthProvider = ({ children }) => {
   }, [])
 
   /**
+   * Forgot password — request reset OTP
+   * POST /api/auth/forgot-password with { email }
+   */
+  const forgotPassword = useCallback(async (email) => {
+    const res = await api.post('/auth/forgot-password', { email })
+    return res.data
+  }, [])
+
+  /**
+   * Verify reset OTP — returns a resetToken
+   * POST /api/auth/verify-reset-otp with { email, otp }
+   */
+  const verifyResetOtp = useCallback(async (email, otp) => {
+    const res = await api.post('/auth/verify-reset-otp', { email, otp })
+    return res.data
+  }, [])
+
+  /**
+   * Reset password — use resetToken + new password
+   * POST /api/auth/reset-password with { resetToken, newPassword }
+   */
+  const resetPassword = useCallback(async (resetToken, newPassword) => {
+    const res = await api.post('/auth/reset-password', { resetToken, newPassword })
+    return res.data
+  }, [])
+
+  /**
    * Logout — clear everything
    */
   const logout = useCallback(() => {
@@ -113,8 +169,13 @@ export const AuthProvider = ({ children }) => {
     loading,
     isAuthenticated: !!user,
     register,
+    verifyEmail,
+    resendOtp,
     login,
-    logout
+    logout,
+    forgotPassword,
+    verifyResetOtp,
+    resetPassword
   }
 
   return (

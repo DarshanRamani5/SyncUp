@@ -4,7 +4,7 @@ import path from 'path'
 import prisma from '../lib/prisma.js'
 
 /**
- * Kafka Configuration — Aiven (matching PulseChat architecture)
+ * Kafka Configuration — Aiven
  *
  * Data flow:
  *   Socket.IO handler → produceMessage() → Kafka "MESSAGES" topic

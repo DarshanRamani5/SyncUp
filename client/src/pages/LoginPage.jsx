@@ -4,9 +4,10 @@ import { useAuth } from '../context/AuthContext.jsx'
 
 /**
  * LoginPage
- * 
+ *
  * Premium dark-themed login form with glassmorphism effects.
- * - Email + password fields
+ * - Email/username + password fields
+ * - "Forgot password?" link
  * - Form validation with error display
  * - Loading state on submit
  * - Link to register page
@@ -15,6 +16,7 @@ import { useAuth } from '../context/AuthContext.jsx'
 const LoginPage = () => {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -66,12 +68,12 @@ const LoginPage = () => {
         {/* Form */}
         <form className="auth-form" onSubmit={handleSubmit} id="login-form">
           <div className="form-group">
-            <label className="form-label" htmlFor="login-email">Email</label>
+            <label className="form-label" htmlFor="login-email">Email or Username</label>
             <input
               className="form-input"
               id="login-email"
-              type="email"
-              placeholder="you@example.com"
+              type="text"
+              placeholder="you@example.com or @username"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="email"
@@ -80,16 +82,32 @@ const LoginPage = () => {
           </div>
 
           <div className="form-group">
-            <label className="form-label" htmlFor="login-password">Password</label>
-            <input
-              className="form-input"
-              id="login-password"
-              type="password"
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
-            />
+            <div className="form-label-row">
+              <label className="form-label" htmlFor="login-password">Password</label>
+              <Link to="/forgot-password" className="forgot-password-link" id="forgot-password-link">
+                Forgot password?
+              </Link>
+            </div>
+            <div className="password-input-wrapper">
+              <input
+                className="form-input"
+                id="login-password"
+                type={showPassword ? 'text' : 'password'}
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+              />
+              <button
+                type="button"
+                className="password-toggle-btn"
+                onClick={() => setShowPassword(!showPassword)}
+                tabIndex={-1}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? '🙈' : '👁️'}
+              </button>
+            </div>
           </div>
 
           <button

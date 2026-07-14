@@ -4,6 +4,7 @@ import { ChatProvider } from './context/ChatContext.jsx'
 import ProtectedRoute from './components/ProtectedRoute.jsx'
 import LoginPage from './pages/LoginPage.jsx'
 import RegisterPage from './pages/RegisterPage.jsx'
+import ForgotPasswordPage from './pages/ForgotPasswordPage.jsx'
 import ChatPage from './pages/ChatPage.jsx'
 import FriendsPage from './pages/FriendsPage.jsx'
 
@@ -31,6 +32,7 @@ function App() {
             {/* Public routes */}
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
 
             {/* Protected routes */}
             <Route
